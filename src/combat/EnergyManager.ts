@@ -42,15 +42,20 @@ export class EnergyManager {
     return true;
   }
 
+  /** Energy earned, scaled by the fighter's Focus upgrade. */
+  private earn(f: Fighter, amount: number): void {
+    this.add(f, amount * f.mods.energyGainMult);
+  }
+
   onHit(h: HitEvent): void {
     if (h.parried) {
       // A parried attack earns its thrower nothing.
-      this.add(h.defender, ENERGY_RULES.parryGain);
+      this.earn(h.defender, ENERGY_RULES.parryGain + h.defender.mods.parryEnergyBonus);
     } else if (h.blocked) {
-      this.add(h.attacker, h.move.energyGain * ENERGY_RULES.blockedGainRatio);
-      this.add(h.defender, ENERGY_RULES.guardGain);
+      this.earn(h.attacker, h.move.energyGain * ENERGY_RULES.blockedGainRatio);
+      this.earn(h.defender, ENERGY_RULES.guardGain + h.defender.mods.guardEnergyBonus);
     } else {
-      this.add(h.attacker, h.move.energyGain);
+      this.earn(h.attacker, h.move.energyGain);
     }
   }
 }

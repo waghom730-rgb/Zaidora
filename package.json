@@ -9,9 +9,12 @@
     "preview": "vite preview",
     "typecheck": "tsc",
     "test": "vitest run",
-    "test:browser": "node tests/browser/run.mjs"
+    "test:browser": "node tests/browser/run.mjs",
+    "server": "node --env-file-if-exists=.env server/index.mjs",
+    "start": "vite build && node --env-file-if-exists=.env server/index.mjs --serve-game"
   },
   "dependencies": {
+    "mongodb": "^7.9.0",
     "phaser": "^3.90.0"
   },
   "devDependencies": {

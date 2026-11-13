@@ -3,7 +3,9 @@ import { Arena } from '../arena/Arena';
 import { DEPTH, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, type Difficulty } from '../config';
 import { Effects } from '../effects/Effects';
 import type { Fighter } from '../entities/Fighter';
-import { FIGHTERS, FIGHTER_IDS, type FighterId } from '../entities/fighterDefs';
+import { LADDER, type Mode } from '../../shared/progression.js';
+import { FIGHTERS, FIGHTER_IDS, withOutfit, type FighterId } from '../entities/fighterDefs';
+import { profile } from '../services/profile';
 import { INTRO_CUE, clipLength, getAnimSet } from '../render/animations';
 import type { FighterRig } from '../render/FighterRig';
 import { audio } from '../systems/AudioManager';
@@ -31,12 +33,20 @@ export class CharacterSelectScene extends Phaser.Scene {
   private introTimer = 0;
   private confirmed = false;
   private elapsed = 0;
+  private mode: Mode = 'versus';
+
+  private subtitle(): string {
+    if (this.mode !== 'ladder') return `CPU takes the other fighter  ·  ${this.difficulty.toUpperCase()}`;
+    const st = profile.save.ladder.stage;
+    return `ARCADE LADDER  ·  STAGE ${st + 1}/${LADDER.length}: ${LADDER[st].name.toUpperCase()}  ·  ${LADDER[st].difficulty.toUpperCase()}`;
+  }
 
   constructor() {
     super('CharacterSelectScene');
   }
 
-  init(data: { difficulty?: Difficulty; player?: FighterId }): void {
+  init(data: { difficulty?: Difficulty; player?: FighterId; mode?: Mode }): void {
+    this.mode = data.mode ?? 'versus';
     this.difficulty = data.difficulty ?? 'normal';
     this.selected = Math.max(0, FIGHTER_IDS.indexOf(data.player ?? 'kaen'));
     this.confirmed = false;
@@ -53,12 +63,12 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     this.add.text(GAME_WIDTH / 2, 62, 'CHOOSE YOUR FIGHTER', textStyle(54, '#ffffff')).setOrigin(0.5).setDepth(DEPTH.hud);
     this.add
-      .text(GAME_WIDTH / 2, 118, `CPU takes the other fighter  ·  ${this.difficulty.toUpperCase()}`, textStyle(16, '#ffcf9a', { italic: false }))
+      .text(GAME_WIDTH / 2, 118, this.subtitle(), textStyle(16, '#ffcf9a', { italic: false }))
       .setOrigin(0.5)
       .setDepth(DEPTH.hud);
 
     FIGHTER_IDS.forEach((id, i) => {
-      const def = FIGHTERS[id];
+      const def = withOutfit(FIGHTERS[id], profile.outfit(id));
       const { fighter, rig } = this.showcase.add(def, SLOT_X[i], i === 0 ? 1 : -1, SCALE, DEPTH.fighter);
       const x = SLOT_X[i];
       const texts = [
@@ -185,7 +195,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.time.delayedCall(1300, () => {
       this.cameras.main.fadeOut(350, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-        this.scene.start('FightScene', { difficulty: this.difficulty, player: s.id });
+        this.scene.start('FightScene', { difficulty: this.difficulty, player: s.id, mode: this.mode });
       });
     });
   }

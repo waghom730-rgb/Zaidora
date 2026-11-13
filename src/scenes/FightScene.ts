@@ -10,7 +10,6 @@ import {
   GAME_HEIGHT,
   GAME_WIDTH,
   GROUND_Y,
-  MAX_HP,
   PHYS,
   ROUND_SECONDS,
   ROUNDS_TO_WIN,
@@ -19,13 +18,15 @@ import {
 } from '../config';
 import { Effects } from '../effects/Effects';
 import { FireballView } from '../effects/ProjectileView';
+import { BASE_MODS, LADDER, ladderCpuMods, type MatchReport, type Mode } from '../../shared/progression.js';
 import { Fighter } from '../entities/Fighter';
-import { FIGHTERS, opponentOf, type FighterId } from '../entities/fighterDefs';
+import { FIGHTERS, opponentOf, withOutfit, type FighterId } from '../entities/fighterDefs';
 import { INTRO_CUE } from '../render/animations';
 import { FighterRig } from '../render/FighterRig';
 import { audio } from '../systems/AudioManager';
 import { EnemyAI } from '../systems/EnemyAI';
 import { InputManager, onKeyPress } from '../systems/InputManager';
+import { profile } from '../services/profile';
 import { HUD } from '../ui/HUD';
 import { textStyle } from '../ui/textStyles';
 import type { ResultData } from './ResultScene';
@@ -33,7 +34,34 @@ import type { ResultData } from './ResultScene';
 export interface FightData {
   difficulty?: Difficulty;
   player?: FighterId;
+  /** 'ladder' fights the player's current Arcade Ladder stage; 'versus' is free play. */
+  mode?: Mode;
 }
+
+/** What the player did this match — saved as habits and used for rewards. */
+interface Telemetry {
+  moves: Record<string, number>;
+  specials: number;
+  parries: number;
+  blocks: number;
+  damageDealt: number;
+  damageTaken: number;
+  maxCombo: number;
+  perfectRounds: number;
+  fightSteps: number;
+}
+
+const newTelemetry = (): Telemetry => ({
+  moves: {},
+  specials: 0,
+  parries: 0,
+  blocks: 0,
+  damageDealt: 0,
+  damageTaken: 0,
+  maxCombo: 0,
+  perfectRounds: 0,
+  fightSteps: 0,
+});
 
 type Phase = 'intro' | 'fight' | 'roundEnd' | 'matchOver';
 
@@ -84,7 +112,11 @@ export class FightScene extends Phaser.Scene {
   private winnerPosedAt = -1;
   private paused = false;
   private showBoxes = false;
-  private stats = { maxCombo: 0, damageDealt: 0 };
+  private mode: Mode = 'versus';
+  private stage = 0;
+  private stats: Telemetry = newTelemetry();
+  private lastMoveSerial = -1;
+  private secondWindUsed: [boolean, boolean] = [false, false];
   private camX = GAME_WIDTH / 2;
   private readonly koFocus = { t: 0, x: GAME_WIDTH / 2 };
 
@@ -94,8 +126,11 @@ export class FightScene extends Phaser.Scene {
 
   init(data: FightData): void {
     // Scene instances are reused between matches — reset all match state here.
-    this.difficulty = data.difficulty ?? 'normal';
+    this.mode = data.mode ?? 'versus';
+    this.stage = this.mode === 'ladder' ? profile.save.ladder.stage : 0;
+    this.difficulty = this.mode === 'ladder' ? LADDER[this.stage].difficulty : (data.difficulty ?? 'normal');
     this.playerId = data.player ?? 'kaen';
+    this.lastMoveSerial = -1;
     this.accumulator = 0;
     this.hitstop = 0;
     this.slowMo = 0;
@@ -103,7 +138,7 @@ export class FightScene extends Phaser.Scene {
     this.round = 1;
     this.wins = [0, 0];
     this.paused = false;
-    this.stats = { maxCombo: 0, damageDealt: 0 };
+    this.stats = newTelemetry();
     this.koFocus.t = 0;
   }
 
@@ -119,10 +154,13 @@ export class FightScene extends Phaser.Scene {
     new Arena(this, this.world);
     this.shadows = this.addWorld(this.add.graphics().setDepth(DEPTH.shadow));
 
-    const p1Def = FIGHTERS[this.playerId];
+    const p1Def = withOutfit(FIGHTERS[this.playerId], profile.outfit(this.playerId));
     const p2Def = FIGHTERS[opponentOf(this.playerId)];
     this.p1 = new Fighter(p1Def, START_X[0], 1);
     this.p2 = new Fighter(p2Def, START_X[1], -1);
+    // Upgrades, skills and queued items for the player; tougher CPUs further up the ladder.
+    this.p1.mods = profile.mods();
+    this.p2.mods = this.mode === 'ladder' ? ladderCpuMods(this.stage) : { ...BASE_MODS };
     this.p1.opponent = this.p2;
     this.p2.opponent = this.p1;
     this.r1 = new FighterRig(this, this.p1, { layer: this.world });
@@ -138,6 +176,12 @@ export class FightScene extends Phaser.Scene {
     });
     this.fx = new Effects(this, this.world);
     this.hud = new HUD(this, this.ui, p1Def, p2Def, this.difficulty);
+    if (this.mode === 'ladder') {
+      const s = LADDER[this.stage];
+      this.hud.setSubtitle(`${s.boss ? 'FINAL BOSS' : `STAGE ${this.stage + 1}/${LADDER.length}`} · ${s.name.toUpperCase()}`);
+    }
+    // Energy Tonic: a head start for this match only.
+    this.energy.add(this.p1, this.p1.mods.matchStartEnergy);
 
     this.debug = this.addWorld(this.add.graphics().setDepth(DEPTH.overlay - 1));
     this.debugText = this.addUi(
@@ -199,13 +243,16 @@ export class FightScene extends Phaser.Scene {
     this.p2.setInput(live ? this.ai.getInput() : EMPTY_INPUT);
     this.p1.update();
     this.p2.update();
+    this.trackPlayerMoves();
     this.combat.stepProjectiles();
     this.combat.separate();
     this.combat.constrainSeparation(MAX_SEPARATION);
     for (const hit of this.combat.resolveAttacks()) this.onHit(hit);
+    this.checkSecondWind();
     this.drainEvents(this.p1);
     this.drainEvents(this.p2);
 
+    if (this.phase === 'fight') this.stats.fightSteps++;
     if (this.phase === 'fight' && (this.p1.hp <= 0 || this.p2.hp <= 0)) this.endRound('ko');
 
     this.r1.tick();
@@ -272,6 +319,9 @@ export class FightScene extends Phaser.Scene {
     const defenderIndex = attackerIndex === 0 ? 1 : 0;
     this.lastDefender = h.defender;
     this.energy.onHit(h);
+    if (h.defender === this.p1 && h.parried) this.stats.parries++;
+    else if (h.defender === this.p1 && h.blocked) this.stats.blocks++;
+    else if (h.defender === this.p1) this.stats.damageTaken += h.damage;
 
     if (h.parried) {
       // A longer freeze than any hit: the moment the attack is turned aside should register.
@@ -301,7 +351,7 @@ export class FightScene extends Phaser.Scene {
       this.hud.callout(attackerIndex, 'COUNTER', '#ff6a4d');
     }
 
-    this.hud.setHealth(defenderIndex, h.defender.hp / MAX_HP);
+    this.hud.setHealth(defenderIndex, h.defender.hp / h.defender.mods.maxHp);
     if (h.combo >= 2) this.hud.showCombo(attackerIndex, h.combo);
 
     if (h.attacker === this.p1) {
@@ -383,6 +433,10 @@ export class FightScene extends Phaser.Scene {
     this.roundLoser = null;
     this.winnerPosedAt = -1;
 
+    this.secondWindUsed = [false, false];
+    // Resolve upgrade: a little energy at the start of every round.
+    for (const f of [this.p1, this.p2]) this.energy.add(f, f.mods.roundStartEnergy);
+
     this.hud.resetHealth();
     this.hud.setTime(this.timeLeft);
     this.hud.setRound(this.round);
@@ -441,7 +495,7 @@ export class FightScene extends Phaser.Scene {
         if (this.roundEndReason === 'time' && l && l.state !== 'lose' && t > 50 && l.isActionable()) l.slump();
         if (t === 100) {
           if (!w) this.hud.announce('DRAW', { hold: 900 });
-          else if (w.hp === MAX_HP) this.hud.announce('PERFECT', { color: '#ffd23f', hold: 900 });
+          else if (w.hp === w.mods.maxHp) this.hud.announce('PERFECT', { color: '#ffd23f', hold: 900 });
           else this.hud.announce(w === this.p1 ? 'YOU WIN' : 'YOU LOSE', { color: w === this.p1 ? '#ffd23f' : '#c8b6ff', hold: 900 });
         }
         if (t >= 230) this.nextRound();
@@ -465,6 +519,7 @@ export class FightScene extends Phaser.Scene {
     this.roundWinner = winner;
     this.roundLoser = winner === p1 ? p2 : winner === p2 ? p1 : null;
 
+    if (winner === p1 && p1.hp === p1.mods.maxHp) this.stats.perfectRounds++;
     if (winner === p1) this.wins[0]++;
     else if (winner === p2) this.wins[1]++;
     else {
@@ -501,17 +556,63 @@ export class FightScene extends Phaser.Scene {
   private finishMatch(): void {
     this.phase = 'matchOver';
     const [w1, w2] = this.wins;
+    const outcome = w1 === w2 ? 'draw' : w1 > w2 ? 'win' : 'lose';
+    const st = this.stats;
+    const report: MatchReport = {
+      mode: this.mode,
+      stage: this.mode === 'ladder' ? this.stage : null,
+      fighter: this.playerId,
+      opponent: opponentOf(this.playerId),
+      difficulty: this.difficulty,
+      outcome,
+      rounds: [Math.min(3, w1), Math.min(3, w2)],
+      durationSec: Math.round(st.fightSteps / 60),
+      damageDealt: st.damageDealt,
+      damageTaken: st.damageTaken,
+      maxCombo: st.maxCombo,
+      specials: st.specials,
+      parries: st.parries,
+      blocks: st.blocks,
+      perfectRounds: Math.min(3, st.perfectRounds),
+      moves: st.moves,
+    };
     const data: ResultData = {
-      outcome: w1 === w2 ? 'draw' : w1 > w2 ? 'win' : 'lose',
+      outcome,
+      mode: this.mode,
       difficulty: this.difficulty,
       player: this.playerId,
       wins: [w1, w2],
-      maxCombo: this.stats.maxCombo,
-      damageDealt: this.stats.damageDealt,
+      maxCombo: st.maxCombo,
+      damageDealt: st.damageDealt,
+      report,
     };
     this.cameras.cameras.forEach((c) => c.fadeOut(500, 0, 0, 0));
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.start('ResultScene', data);
+    });
+  }
+
+  // ------------------------------------------------------------------ progression helpers
+
+  /** Counts every move the player starts (habits: favourite moves, special usage). */
+  private trackPlayerMoves(): void {
+    const p = this.p1;
+    if (p.state !== 'attack' || !p.move || p.moveSerial === this.lastMoveSerial) return;
+    this.lastMoveSerial = p.moveSerial;
+    this.stats.moves[p.move.id] = (this.stats.moves[p.move.id] ?? 0) + 1;
+    if (p.move.special) this.stats.specials++;
+  }
+
+  /** Second Wind skill: once per round, a fighter dropping under 25% health recovers 15. */
+  private checkSecondWind(): void {
+    ([this.p1, this.p2] as const).forEach((f, i) => {
+      if (!f.mods.secondWind || this.secondWindUsed[i] || f.hp <= 0 || f.hp >= f.mods.maxHp * 0.25) return;
+      this.secondWindUsed[i] = true;
+      f.hp = Math.min(f.mods.maxHp, f.hp + 15);
+      this.hud.setHealth(i as 0 | 1, f.hp / f.mods.maxHp);
+      this.hud.callout(i as 0 | 1, 'SECOND WIND', '#7dffb0');
+      this.fx.aura(f.x, GROUND_Y, f.def.fx, 14);
+      audio.play('powerup');
     });
   }
 
@@ -529,6 +630,7 @@ export class FightScene extends Phaser.Scene {
       case 'KeyM':
         audio.toggleMute();
         this.pauseSound.setText(`M   Sound: ${audio.muted ? 'OFF' : 'ON'}`);
+        void profile.saveSettings({ muted: audio.muted });
         break;
       case 'Backquote':
         this.showBoxes = !this.showBoxes;

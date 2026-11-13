@@ -639,7 +639,7 @@ function paintHead(c: C, def: FighterDef, e: Expression): void {
 // ------------------------------------------------------------------ entry point
 
 export function paintCharacter(scene: Phaser.Scene, def: FighterDef): void {
-  const id = def.id;
+  const id = def.artKey ?? def.id;
   paintPart(scene, partKey(id, 'upper'), 34, 56, 17, 13, (c) => paintUpperArm(c, def));
   paintPart(scene, partKey(id, 'fore'), 32, 58, 16, 10, (c) => paintForearm(c, def));
   paintPart(scene, partKey(id, 'thigh'), 40, 72, 20, 13, (c) => paintThigh(c, def));

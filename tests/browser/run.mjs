@@ -3,11 +3,12 @@
 //   BASE_URL=http://localhost:5173 npm run test:browser   (use a server that's already running)
 import { launchBrowser, startServer } from './harness.mjs';
 import * as flow from './flow.mjs';
+import * as progression from './progression.mjs';
 import * as specials from './specials.mjs';
 import * as stability from './stability.mjs';
 
 const only = process.argv.slice(2);
-const suites = { flow, specials, stability };
+const suites = { flow, specials, stability, progression };
 
 const server = await startServer();
 const browser = await launchBrowser();
@@ -17,7 +18,7 @@ try {
   for (const [name, suite] of Object.entries(suites)) {
     if (only.length && !only.includes(name)) continue;
     console.log(`\n${name}`);
-    const result = await suite.run(browser, server.url);
+    const result = await suite.run(browser, server.url, server);
     passed += result.passed;
     failed += result.failed;
     if (result.pageErrors.length) {

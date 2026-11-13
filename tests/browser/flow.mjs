@@ -6,8 +6,9 @@ export async function run(browser, url) {
   const t = new Suite('flow');
   const page = await openGame(browser, url, t);
 
+  await tap(page, 's', 150); // VERSUS CPU
   await tap(page, 'Enter', 700);
-  t.check('Menu → character select', (await activeScenes(page)).includes('CharacterSelectScene'));
+  t.check('Menu → Versus → character select', (await activeScenes(page)).includes('CharacterSelectScene'));
 
   await tap(page, 'd', 150);
   await tap(page, 'Enter');

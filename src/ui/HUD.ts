@@ -16,6 +16,7 @@ export class HUD {
   private readonly energyBars: [EnergyBar, EnergyBar];
   private readonly timerText: Phaser.GameObjects.Text;
   private readonly roundText: Phaser.GameObjects.Text;
+  private readonly subtitle: Phaser.GameObjects.Text;
   private readonly winMarks: Phaser.GameObjects.Graphics;
   private readonly comboTexts: [Phaser.GameObjects.Text, Phaser.GameObjects.Text];
   private readonly comboTimers: [number, number] = [0, 0];
@@ -84,6 +85,9 @@ export class HUD {
     this.roundText = text(CX, 98, 'ROUND 1', textStyle(14, '#ffd23f', { strokeRatio: 0.25 }))
       .setOrigin(0.5)
       .setDepth(d);
+    this.subtitle = text(CX, 118, '', textStyle(12, '#ffffff', { italic: false, strokeRatio: 0.3 }))
+      .setOrigin(0.5)
+      .setDepth(d);
 
     this.winMarks = graphics().setDepth(d);
     this.setWins(0, 0);
@@ -137,6 +141,11 @@ export class HUD {
       this.timerText.setScale(1.25);
       this.scene.tweens.add({ targets: this.timerText, scale: 1, duration: 250, ease: 'Quad.easeOut' });
     }
+  }
+
+  /** Small line under the round label, e.g. the Arcade Ladder stage. */
+  setSubtitle(label: string): void {
+    this.subtitle.setText(label);
   }
 
   setRound(round: number): void {

@@ -8,14 +8,40 @@ import { createServer } from 'vite';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-/** Starts a Vite dev server for the game, unless BASE_URL already points at a running one. */
+/**
+ * Starts a Vite dev server for the game, unless BASE_URL already points at a running one.
+ * With TEST_MONGODB_URI set, also starts the real game server on a throwaway database
+ * (dropped afterwards) so account and save tests run end to end.
+ */
 export async function startServer() {
-  if (process.env.BASE_URL) return { url: process.env.BASE_URL, close: async () => {} };
-  const server = await createServer({ root: ROOT, logLevel: 'error', server: { port: 5190, strictPort: false } });
+  if (process.env.BASE_URL) return { url: process.env.BASE_URL, api: false, mongo: null, close: async () => {} };
+  let api = null;
+  const mongo = process.env.TEST_MONGODB_URI ? { uri: process.env.TEST_MONGODB_URI, db: `zaikora_browser_${process.pid}` } : null;
+  if (mongo) {
+    const { createApp } = await import('../../server/app.mjs');
+    api = await createApp({ mongoUri: mongo.uri, dbName: mongo.db, log: {} });
+    await new Promise((r) => api.server.listen(0, r));
+  }
+  const proxy = api ? { '/api': `http://127.0.0.1:${api.server.address().port}` } : undefined;
+  const server = await createServer({ root: ROOT, logLevel: 'error', server: { port: 5190, strictPort: false, proxy } });
   await server.listen();
   const url = server.resolvedUrls?.local[0];
   if (!url) throw new Error('Vite did not report a local URL');
-  return { url, close: () => server.close() };
+  return {
+    url,
+    api: !!api,
+    mongo,
+    close: async () => {
+      await server.close();
+      if (api) {
+        const { MongoClient } = await import('mongodb');
+        const c = await new MongoClient(mongo.uri).connect();
+        await c.db(mongo.db).dropDatabase();
+        await c.close();
+        await api.close();
+      }
+    },
+  };
 }
 
 /** Headless Chrome with software WebGL (works without a GPU). Set CHROME_PATH to override. */
@@ -44,15 +70,22 @@ export class Suite {
   }
 }
 
-/** Opens the game and waits for the main menu. Page errors are collected into the suite. */
-export async function openGame(browser, url, suite) {
+/**
+ * Opens the game (each page gets fresh browser storage). By default it plays as a guest and
+ * waits for the main menu; with { guest: false } it waits on the account screen instead.
+ * Page errors are collected into the suite. Expected failed requests (no save server running)
+ * are ignored.
+ */
+export async function openGame(browser, url, suite, { guest = true } = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on('pageerror', (e) => suite.pageErrors.push(e.message));
   page.on('console', (m) => {
-    if (m.type() === 'error') suite.pageErrors.push(m.text());
+    if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) suite.pageErrors.push(m.text());
   });
+  if (guest) await page.addInitScript(() => localStorage.setItem('zaikora.guest', '1'));
   await page.goto(url);
-  await page.waitForFunction(() => window.game?.scene.isActive('MenuScene'), null, { timeout: 30000 });
+  const scene = guest ? 'MenuScene' : 'AccountScene';
+  await page.waitForFunction((k) => window.game?.scene.isActive(k), scene, { timeout: 30000 });
   await page.waitForTimeout(500);
   return page;
 }

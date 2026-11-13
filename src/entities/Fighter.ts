@@ -1,3 +1,4 @@
+import { BASE_MODS, type FighterMods } from '../../shared/progression.js';
 import { GROUND_Y, MAX_HP, PHYS, STAGE_LEFT, STAGE_RIGHT } from '../config';
 import { MOVES, type AttackButton, type MoveData, type MoveId } from '../combat/moves';
 import { EMPTY_INPUT, type Box, type FighterInput } from '../combat/types';
@@ -67,6 +68,8 @@ export class Fighter {
   vy = 0;
   facing: 1 | -1;
   hp = MAX_HP;
+  /** Upgrades, skills and items (player) or ladder-stage scaling (CPU). */
+  mods: FighterMods = { ...BASE_MODS };
   state: FighterState = 'idle';
   stateTime = 0;
   grounded = true;
@@ -126,7 +129,7 @@ export class Fighter {
     this.vx = 0;
     this.vy = 0;
     this.facing = facing;
-    this.hp = MAX_HP;
+    this.hp = this.mods.maxHp;
     this.grounded = true;
     this.combo = 0;
     this.hitFlash = 0;
@@ -607,7 +610,10 @@ export class Fighter {
       this.state === 'parried' ||
       (this.state === 'attack' && this.movePhase === 'startup') ||
       (this.state === 'backdash' && this.stateTime > PHYS.backdashInvulnFrames);
-    const damage = counter ? Math.round(move.damage * PHYS.counterDamage) : move.damage;
+    let mult = from.mods.damageMult;
+    if (move.special) mult *= from.mods.specialDamageMult;
+    if (counter) mult *= PHYS.counterDamage * from.mods.counterDamageMult;
+    const damage = Math.max(1, Math.round(move.damage * mult));
     this.hp = Math.max(0, this.hp - damage);
     this.hitFlash = 5;
     this.buffer = null;

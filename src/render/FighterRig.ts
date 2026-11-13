@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { Fighter } from '../entities/Fighter';
-import type { FighterId } from '../entities/fighterDefs';
+import type { FighterDef } from '../entities/fighterDefs';
 import { ART_RES, headKey, partKey, partOrigin, type Expression, type PartId } from './CharacterArt';
 import { clipLength, getAnimSet, sampleClip, type AnimSet, type Clip } from './animations';
 import { NEUTRAL, clonePose, copyPose, mixPose, type Pose } from './poses';
@@ -57,10 +57,11 @@ function multiply(a: number, b: number): number {
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
-function ropeSpecs(id: FighterId): RopeSpec[] {
-  if (id === 'kaen') {
-    const band = css('#f7f3ea');
-    const belt = css('#211a25');
+function ropeSpecs(def: FighterDef): RopeSpec[] {
+  const L = def.look;
+  if (def.id === 'kaen') {
+    const band = css(L.accent);
+    const belt = css(L.belt);
     const tail = (length: number, droop: number): RopeOptions => ({
       segments: 5,
       length,
@@ -86,9 +87,9 @@ function ropeSpecs(id: FighterId): RopeSpec[] {
       { space: 'torso', anchor: { x: 14, y: 2 }, front: true, w0: 5, w1: 4, color: belt, opts: beltTail(15, -0.1) },
     ];
   }
-  const hair = css('#d6dbf0');
-  const scarf = css('#6d40d8');
-  const sash = css('#6fd8f5');
+  const hair = css(L.hair[1]);
+  const scarf = css(L.accent);
+  const sash = css(L.belt);
   const scarfTail = (length: number, droop: number): RopeOptions => ({
     segments: 8,
     length,
@@ -177,6 +178,8 @@ export class FighterRig {
   private readonly trailG: Phaser.GameObjects.Graphics;
   private readonly ropes: RopeSlot[];
   private readonly anims: AnimSet;
+  /** Texture key prefix: the fighter id, or id@outfit for alternate looks. */
+  private readonly art: string;
   private readonly ghosts: Ghost[] = [];
   private ghostIndex = 0;
 
@@ -218,13 +221,14 @@ export class FighterRig {
     this.layer = opts.layer;
     this.scale = opts.scale ?? 1;
     this.anims = getAnimSet(f.def.id);
+    this.art = f.def.artKey ?? f.def.id;
 
     this.backG = this.track(scene.add.graphics());
     this.root = this.track(scene.add.container(f.x, f.y));
     this.body = scene.add.container(0, 0);
     this.root.add(this.body);
     for (const name of ORDER) {
-      const key = name === 'head' ? headKey(f.def.id, 'normal') : partKey(f.def.id, TEXTURE[name]);
+      const key = name === 'head' ? headKey(this.art, 'normal') : partKey(this.art, TEXTURE[name]);
       const o = partOrigin(key);
       const img = scene.add.image(0, 0, key).setOrigin(o.x, o.y).setScale(1 / ART_RES);
       if (name.endsWith('B')) img.setTint(BACK_TINT);
@@ -234,7 +238,7 @@ export class FighterRig {
     this.frontG = this.track(scene.add.graphics());
     this.trailG = this.track(scene.add.graphics()).setBlendMode(Phaser.BlendModes.ADD);
 
-    this.ropes = ropeSpecs(f.def.id).map((spec) => {
+    this.ropes = ropeSpecs(f.def).map((spec) => {
       const s = this.scale;
       const opts: RopeOptions = { ...spec.opts, length: spec.opts.length * s };
       return { ...spec, w0: spec.w0 * s, w1: spec.w1 * s, rope: new Rope(opts) };
@@ -456,7 +460,7 @@ export class FighterRig {
 
     const headDeg = p.lean + p.head;
     this.place('head', chest, headDeg);
-    const face = headKey(f.def.id, this.expression);
+    const face = headKey(this.art, this.expression);
     if (this.parts.head.texture.key !== face) this.parts.head.setTexture(face);
 
     this.chest = chest;

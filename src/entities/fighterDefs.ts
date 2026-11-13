@@ -29,6 +29,8 @@ export interface FighterLook {
 
 export interface FighterDef {
   id: FighterId;
+  /** Texture key prefix for this look (outfits get their own); defaults to `id`. */
+  artKey?: string;
   name: string;
   style: string;
   /** Short lines shown on the character select screen. */
@@ -111,6 +113,55 @@ export const YORU: FighterDef = {
 };
 
 export const FIGHTERS: Record<FighterId, FighterDef> = { kaen: KAEN, yoru: YORU };
+
+/** Alternate outfits (earned on the Arcade Ladder or bought in the Dojo): recoloured looks. */
+export const OUTFIT_LOOKS: Record<string, { fighter: FighterId; look: Partial<FighterLook> }> = {
+  kaenMidnight: {
+    fighter: 'kaen',
+    look: {
+      gi: '#24336b',
+      giShade: '#131c40',
+      pants: '#1c2858',
+      pantsShade: '#0f1634',
+      trim: '#cfd8f2',
+      hair: ['#0b0d22', '#2f46a8', '#8fb6ff'],
+      iris: '#8fd0ff',
+      accent: '#d6def5',
+      accentShade: '#9aa6c8',
+    },
+  },
+  yoruCrimson: {
+    fighter: 'yoru',
+    look: {
+      gi: '#8a1726',
+      giShade: '#4f0b15',
+      pants: '#6a111d',
+      pantsShade: '#3a0910',
+      trim: '#ff8f8f',
+      belt: '#1d151a',
+      beltShade: '#0b0709',
+      iris: '#ff4d5a',
+      accent: '#1d151a',
+      accentShade: '#0b0709',
+      mask: '#170a0e',
+    },
+  },
+};
+
+/** The fighter as they look in the given outfit ('default' = original look). */
+export function withOutfit(def: FighterDef, outfit: string): FighterDef {
+  const o = OUTFIT_LOOKS[outfit];
+  if (!o || o.fighter !== def.id) return def;
+  return { ...def, artKey: `${def.id}@${outfit}`, look: { ...def.look, ...o.look } };
+}
+
+/** Every look that needs painting at boot: each fighter plus each outfit. */
+export function allLooks(): FighterDef[] {
+  return [
+    ...FIGHTER_IDS.map((id) => FIGHTERS[id]),
+    ...Object.entries(OUTFIT_LOOKS).map(([outfit, o]) => withOutfit(FIGHTERS[o.fighter], outfit)),
+  ];
+}
 export const FIGHTER_IDS: readonly FighterId[] = ['kaen', 'yoru'];
 
 export function opponentOf(id: FighterId): FighterId {

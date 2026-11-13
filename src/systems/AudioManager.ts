@@ -53,9 +53,14 @@ class AudioManager {
   }
 
   toggleMute(): boolean {
-    this._muted = !this._muted;
-    if (this.master) this.master.gain.value = this._muted ? 0 : 0.45;
+    this.setMuted(!this._muted);
     return this._muted;
+  }
+
+  /** Applies the saved sound setting (e.g. after logging in). */
+  setMuted(muted: boolean): void {
+    this._muted = muted;
+    if (this.master) this.master.gain.value = this._muted ? 0 : 0.45;
   }
 
   play(name: Sfx): void {

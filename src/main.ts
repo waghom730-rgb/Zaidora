@@ -1,15 +1,21 @@
 import Phaser from 'phaser';
 import './styles/main.css';
 import { GAME_HEIGHT, GAME_WIDTH } from './config';
+import { AccountScene } from './scenes/AccountScene';
 import { BootScene } from './scenes/BootScene';
 import { CharacterSelectScene } from './scenes/CharacterSelectScene';
+import { DojoScene } from './scenes/DojoScene';
 import { FightScene } from './scenes/FightScene';
 import { MenuScene } from './scenes/MenuScene';
+import { ProfileScene } from './scenes/ProfileScene';
 import { ResultScene } from './scenes/ResultScene';
+import { profile } from './services/profile';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO, // WebGL, with Canvas fallback
   parent: 'game',
+  // HTML overlay for the login form (Phaser has no text input of its own).
+  dom: { createContainer: true },
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: '#07060c',
@@ -24,10 +30,10 @@ const game = new Phaser.Game({
   fps: { target: 60 },
   // Sound is synthesized by our own AudioManager; Phaser's audio system isn't needed yet.
   audio: { noAudio: true },
-  scene: [BootScene, MenuScene, CharacterSelectScene, FightScene, ResultScene],
+  scene: [BootScene, AccountScene, MenuScene, CharacterSelectScene, FightScene, ResultScene, DojoScene, ProfileScene],
 });
 
 if (import.meta.env.DEV) {
   // Handy for poking at state from the browser console during development.
-  (window as unknown as { game: Phaser.Game }).game = game;
+  Object.assign(window, { game, zaikora: { profile } });
 }

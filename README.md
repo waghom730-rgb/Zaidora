@@ -17,16 +17,57 @@ difficulty levels, and victory/defeat screens.
 
 ## Run it
 
-Requires Node.js 20.19+ or 22.12+.
+Requires Node.js 22.9+ (the server reads `.env` with `--env-file-if-exists`).
 
 ```bash
 npm install
-npm run dev        # open the URL Vite prints (http://localhost:5173)
+cp .env.example .env   # then put your MongoDB connection string in .env
+npm start              # builds the game and serves game + save server on http://localhost:8787
 ```
 
-Other scripts: `npm run build` (type-check + production build into `dist/`),
-`npm run preview` (serve the build), `npm run typecheck`, `npm test` (headless combat and
-CPU tests, see [Tests](#tests)).
+For development, run the save server and the hot-reloading game side by side:
+
+```bash
+npm run server     # terminal 1 — accounts & saves API on :8787
+npm run dev        # terminal 2 — game on http://localhost:5173 (forwards /api to :8787)
+```
+
+Without a database (or without `npm run server`) the game still works: choose **Play as
+guest** and progress is kept in the browser.
+
+Other scripts: `npm run build`, `npm run preview`, `npm run typecheck`, `npm test`
+(headless tests), `npm run test:browser` (real-browser tests) — see [Tests](#tests).
+
+## Accounts, progress and saving
+
+| What | Where it's stored |
+| ---- | ----------------- |
+| Accounts | MongoDB `players` — username + salted scrypt password hash (passwords are never stored) |
+| Login sessions | MongoDB `authTokens` — SHA-256 of a random token; expire after 30 days |
+| Progress | MongoDB `saves` — level, XP, coins, skill points, Arcade Ladder stage + checkpoint, upgrades, skills, inventory, outfits, settings, habit stats |
+| Match history | MongoDB `matches` — every match: fighter, opponent, mode, result, rounds, duration, damage, combo, parries, blocks, moves used, rewards |
+| Play sessions | MongoDB `playSessions` — start, end, duration (for streaks and time played) |
+| Guest progress | the browser's localStorage (same rules, this device only) |
+
+- **Arcade Ladder** — 10 stages of rising difficulty. Checkpoints at stages 1, 4, 7 and 10:
+  lose and you restart from your last checkpoint. Reaching checkpoints pays items; clearing
+  the ladder pays 300 coins and the fighter's alternate outfit.
+- **Rewards** — every match pays coins and XP (more for harder fights and perfect rounds).
+  Levelling up gives skill points.
+- **Dojo** — coins buy upgrades (Vitality +HP, Power +damage, Focus +energy gain, Resolve
+  round-start energy) and items (Energy Tonic, Lucky Charm, outfits); skill points unlock
+  skills (Second Wind, Iron Guard, Parry Master, Finisher, Counter Instinct).
+- **Profile** — level, ladder record, upgrades, skills, inventory, and habits: win rate,
+  favourite fighter and move, parries, blocks, specials, play time, sessions, day streaks,
+  recent matches.
+
+The rules live in one place, `shared/progression.js`, used by both the server and the game.
+For logged-in players the **server applies them** (the game reports what happened; the server
+validates it and decides rewards), so editing the browser can't grant coins or skip stages.
+
+**Security:** the MongoDB connection string lives only in `.env` (git-ignored) and is read by
+the server — it is never sent to the browser or committed. MongoDB Atlas must allow the
+server's IP address (Atlas → Network Access).
 
 ## Controls
 
@@ -119,6 +160,14 @@ stagger or an evade's recovery deals 25% more damage with extra hitstun (shown a
 ## Project structure
 
 ```
+server/
+├── index.mjs                Entry point (reads .env): API, or game + API with --serve-game
+├── app.mjs                  HTTP API: accounts, saves, matches, sessions; static hosting
+├── store.mjs                MongoDB collections and indexes
+└── auth.mjs                 Password hashing (scrypt) and login tokens
+shared/
+└── progression.js           Rules shared by server and game: ladder, rewards, upgrades,
+                             skills, items, outfits, habits, save validation
 src/
 ├── main.ts                  Phaser game config
 ├── config.ts                Constants: stage size, physics tuning, rounds, difficulty storage
@@ -132,6 +181,9 @@ src/
 ├── entities/
 │   ├── Fighter.ts           State machine, movement, hurt/hit/push boxes
 │   └── fighterDefs.ts       Kaen & Yoru: names, colors, effect styles
+├── services/
+│   ├── api.ts               HTTP client for the save server (login token only)
+│   └── profile.ts           Current player: online (server) or guest (localStorage)
 ├── combat/
 │   ├── moves.ts             Frame data, chain routes, energy gains, specials
 │   ├── CombatManager.ts     Hit detection, blocking, combos, projectiles, body separation
