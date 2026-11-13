@@ -394,7 +394,8 @@ the distance..."
 
   Yoru procedural visual design       Existing prototype
 
-  Kaen/Yoru animation states          Existing prototype
+  Kaen/Yoru animation states          Phase 1 polish done (see
+                                      ANIMATION_AUDIT.md)
 
   Kai final design                    Not locked
 

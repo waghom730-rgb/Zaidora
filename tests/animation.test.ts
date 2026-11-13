@@ -220,33 +220,31 @@ class Watched {
         h: [-FOOT_CLEARANCE - q[0].y, -FOOT_CLEARANCE - q[1].y],
         planted: [modes[0] !== 'free', modes[1] !== 'free'],
       });
-      this.states[i].push(`${f.state}${f.move ? ':' + f.move.id + ':' + f.movePhase : ''} x=${f.x.toFixed(1)} vx=${f.vx.toFixed(1)} modes=${modes.join('/')}`);
+      this.states[i].push(`${f.state}${f.move ? ` ${f.move.id} (${f.movePhase})` : ''}, feet ${modes.join('/')}`);
       for (const v of [d.hip.x, d.hip.y, d.scaleX, d.joints.handF.x, d.joints.toeF.y]) expect(Number.isFinite(v)).toBe(true);
     });
   }
 
+  /** What each fighter was doing on each step (for failure messages). */
   readonly states: string[][] = [[], []];
 
-  /** Worst single-step slide of a foot that is planted and on the floor on both steps. */
-  worstSlide(i: 0 | 1): number {
-    let worst = 0;
-    let where = '';
+  /** Worst single-step slide of a foot that is planted and on the floor on both steps, and where. */
+  worstSlide(i: 0 | 1): { px: number; where: string } {
+    let px = 0;
+    let where = 'nowhere';
     const fr = this.feet[i];
     for (let t = 1; t < fr.length; t++) {
       for (const k of [0, 1] as const) {
         const a = fr[t - 1];
         const b = fr[t];
-        if (process.env.ANIM_DEBUG && a.planted[k] && b.planted[k] && a.h[k] < 1 && b.h[k] < 1 && Math.abs(b.x[k] - a.x[k]) > 3) {
-          console.warn(`slide ${Math.abs(b.x[k] - a.x[k]).toFixed(1)} step ${t} ${k ? 'B' : 'F'} ${this.states[i][t - 1]} -> ${this.states[i][t]}`);
-        }
-        if (a.planted[k] && b.planted[k] && a.h[k] < 1 && b.h[k] < 1 && Math.abs(b.x[k] - a.x[k]) > worst) {
-          worst = Math.abs(b.x[k] - a.x[k]);
-          where = `step ${t} foot ${k ? 'B' : 'F'} ${this.states[i][t - 1]} -> ${this.states[i][t]}`;
+        const d = Math.abs(b.x[k] - a.x[k]);
+        if (a.planted[k] && b.planted[k] && a.h[k] < 1 && b.h[k] < 1 && d > px) {
+          px = d;
+          where = `step ${t}, ${k ? 'back' : 'front'} foot: ${this.states[i][t - 1]} → ${this.states[i][t]}`;
         }
       }
     }
-    if (process.env.ANIM_DEBUG) console.warn(`worst slide ${worst.toFixed(1)} at ${where}`);
-    return worst;
+    return { px, where };
   }
 }
 
@@ -271,7 +269,8 @@ describe('in play', () => {
         [30, {}],
       ];
       for (const [steps, press] of script) for (let t = 0; t < steps; t++) w.step(input(press));
-      expect(w.worstSlide(0), 'largest planted-foot slide in one step (px)').toBeLessThan(4);
+      const slide = w.worstSlide(0);
+      expect(slide.px, `largest planted-foot slide in one step (px), at ${slide.where}`).toBeLessThan(4);
     });
   }
 
