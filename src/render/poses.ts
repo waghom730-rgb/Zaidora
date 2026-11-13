@@ -5,6 +5,7 @@
  *   lean: torso tilt (positive = forward). head: extra head tilt on top of lean.
  *   lying: 0 = standing on the feet, 1 = lying flat on the floor.
  *   rootRot: whole-body rotation around the hips (flips, spins). squash: vertical scale.
+ *   lift: raises the whole body off the floor (hops, staggers) without changing the simulation.
  */
 export interface Pose {
   bodyX: number;
@@ -13,6 +14,7 @@ export interface Pose {
   lying: number;
   rootRot: number;
   squash: number;
+  lift: number;
   armF: [number, number];
   armB: [number, number];
   legF: [number, number];
@@ -26,13 +28,14 @@ export const NEUTRAL: Pose = {
   lying: 0,
   rootRot: 0,
   squash: 1,
+  lift: 0,
   armF: [40, 105],
   armB: [20, 128],
   legF: [35, -38],
   legB: [-25, 0],
 };
 
-const SCALARS = ['bodyX', 'lean', 'head', 'lying', 'rootRot', 'squash'] as const;
+const SCALARS = ['bodyX', 'lean', 'head', 'lying', 'rootRot', 'squash', 'lift'] as const;
 const LIMBS = ['armF', 'armB', 'legF', 'legB'] as const;
 
 export function clonePose(p: Pose): Pose {
@@ -43,6 +46,7 @@ export function clonePose(p: Pose): Pose {
     lying: p.lying,
     rootRot: p.rootRot,
     squash: p.squash,
+    lift: p.lift,
     armF: [p.armF[0], p.armF[1]],
     armB: [p.armB[0], p.armB[1]],
     legF: [p.legF[0], p.legF[1]],

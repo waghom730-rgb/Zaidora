@@ -7,6 +7,7 @@ import { FIGHTERS, FIGHTER_IDS, type FighterId } from '../entities/fighterDefs';
 import { INTRO_CUE, clipLength, getAnimSet } from '../render/animations';
 import type { FighterRig } from '../render/FighterRig';
 import { audio } from '../systems/AudioManager';
+import { onKeyPress } from '../systems/InputManager';
 import { textStyle } from '../ui/textStyles';
 import { Showcase } from './showcase';
 
@@ -84,7 +85,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
     this.add.text(GAME_WIDTH / 2, 470, 'VS', textStyle(64, '#ffd23f')).setOrigin(0.5).setDepth(DEPTH.hud).setAlpha(0.85);
 
-    this.input.keyboard?.on('keydown', this.onKey, this);
+    onKeyPress(this, (e) => this.onKey(e));
     this.highlight(true);
     this.cameras.main.fadeIn(350);
   }

@@ -94,6 +94,14 @@ export class Effects {
     this.blockSparks.explode(10, x, y);
   }
 
+  /** Parry: a bright golden deflection — bigger and warmer than a block. */
+  parry(x: number, y: number): void {
+    this.ring(x, y, 0xffe066, 5, 340);
+    this.ring(x, y, 0xffffff, 3, 220);
+    this.starBurst(x, y, 64, 0xffffff, 0xffc93d, 220);
+    this.blockSparks.explode(20, x, y);
+  }
+
   dust(x: number, y: number, amount: number): void {
     this.dustPuffs.explode(amount, x, y);
   }

@@ -11,6 +11,7 @@ import {
 } from '../config';
 import { KAEN, YORU } from '../entities/fighterDefs';
 import { audio } from '../systems/AudioManager';
+import { onKeyPress } from '../systems/InputManager';
 import { textStyle } from '../ui/textStyles';
 import { Showcase } from './showcase';
 
@@ -78,8 +79,10 @@ export class MenuScene extends Phaser.Scene {
       ['W', 'Jump'],
       ['J', 'Punch'],
       ['K', 'Kick'],
+      ['U', 'Heavy'],
       ['L', 'Special'],
-      ['S', 'Block'],
+      ['S', 'Block / parry'],
+      ['SPACE', 'Dash / evade'],
       ['ESC', 'Pause'],
       ['M', 'Mute'],
     ];
@@ -87,16 +90,16 @@ export class MenuScene extends Phaser.Scene {
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = CX - 200 + col * 230;
-      const y = 456 + row * 36;
+      const y = 452 + row * 31;
       this.add.text(x, y, key, textStyle(18, '#ffd23f', { italic: false })).setDepth(DEPTH.hud);
       this.add.text(x + 90, y, action, textStyle(18, '#ffffff', { italic: false })).setDepth(DEPTH.hud);
     });
     this.add
-      .text(CX, 632, 'Combo: J, J, K  ·  K, K  ·  finish a combo with L', textStyle(14, '#ffcf9a', { italic: false }))
+      .text(CX, 632, 'Combos: J, J, K  ·  J, J, U  ·  K, U  ·  end with L   |   Tap S as a hit lands to parry', textStyle(14, '#ffcf9a', { italic: false }))
       .setOrigin(0.5)
       .setDepth(DEPTH.hud);
 
-    this.input.keyboard?.on('keydown', this.onKey, this);
+    onKeyPress(this, (e) => this.onKey(e));
     this.cameras.main.fadeIn(400);
   }
 

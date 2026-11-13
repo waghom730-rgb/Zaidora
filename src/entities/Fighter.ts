@@ -7,12 +7,17 @@ export type FighterState =
   | 'intro'
   | 'idle'
   | 'walk'
+  | 'run'
+  | 'dash'
+  | 'backdash'
   | 'prejump'
   | 'air'
   | 'land'
   | 'attack'
   | 'block'
   | 'blockstun'
+  | 'parry'
+  | 'parried'
   | 'hitstun'
   | 'knockdown'
   | 'down'
@@ -24,16 +29,36 @@ export type FighterState =
 export type MovePhase = 'startup' | 'active' | 'recovery';
 
 /** One-shot things that happened this step, drained by the scene for sound / effects. */
-export type FighterEvent = 'jump' | 'land' | 'whoosh' | 'groundImpact' | 'specialStart' | 'projectile' | 'noEnergy';
+export type FighterEvent =
+  | 'jump'
+  | 'land'
+  | 'whoosh'
+  | 'groundImpact'
+  | 'specialStart'
+  | 'projectile'
+  | 'noEnergy'
+  | 'dash'
+  | 'evade';
+
+/** How an incoming attack was resolved by the defender. */
+export interface HitOutcome {
+  kind: 'hit' | 'block' | 'parry';
+  /** The hit landed on attack startup, a parry stagger or an evade's recovery: bonus damage and hitstun. */
+  counter: boolean;
+}
 
 const BODY_W = 62;
 const STAND_H = 186;
 const PUSH_W = 56;
+/** The evade travels for this many frames, then holds still for the rest of its recovery. */
+const BACKDASH_TRAVEL = 16;
+/** Run → stop: a short braking skid (uses the landing crouch). */
+const RUN_STOP_FRAMES = 5;
 
 /**
  * A fighter's simulation: state machine, movement and combat boxes.
  * Contains no rendering or Phaser code — a controller (keyboard or AI) feeds it
- * a FighterInput every step and FighterRenderer draws it.
+ * a FighterInput every step and FighterRig draws it.
  */
 export class Fighter {
   x: number;
@@ -45,6 +70,8 @@ export class Fighter {
   state: FighterState = 'idle';
   stateTime = 0;
   grounded = true;
+  /** Simulation steps since creation (pauses during hitstop, like everything else). */
+  clock = 0;
 
   move: MoveData | null = null;
   moveFrame = 0;
@@ -55,10 +82,12 @@ export class Fighter {
 
   /** Hits landed in the current combo. */
   combo = 0;
-  /** Increments on every hit or block received — lets the renderer restart reactions. */
+  /** Increments on every hit, block or parry received — lets the renderer restart reactions. */
   hitSerial = 0;
   /** Whether the last hit taken was aimed at the head (vs. the body). */
   lastHitHigh = true;
+  /** Whether the last hit taken was a heavy one (bigger stagger reaction). */
+  lastHitHeavy = false;
   /** -1 back, 0 straight up, 1 forward — for the current/last jump. */
   jumpDir = 0;
   hitFlash = 0;
@@ -74,8 +103,13 @@ export class Fighter {
   private stun = 0;
   private airAttackUsed = false;
   private landLag = 0;
+  private runJump = false;
   private held: FighterInput = { ...EMPTY_INPUT };
   private buffer: { button: AttackButton; frames: number } | null = null;
+  private dashBuffer = 0;
+  /** A parry succeeds if a hit arrives while clock <= parryUntil. */
+  private parryUntil = -1;
+  private lastParryPress = -1e9;
 
   constructor(
     readonly def: FighterDef,
@@ -98,6 +132,10 @@ export class Fighter {
     this.hitFlash = 0;
     this.stun = 0;
     this.buffer = null;
+    this.dashBuffer = 0;
+    this.parryUntil = -1;
+    this.lastParryPress = -1e9;
+    this.lastHitHeavy = false;
     this.held = { ...EMPTY_INPUT };
     this.events.length = 0;
     this.setState('idle');
@@ -115,13 +153,17 @@ export class Fighter {
 
   get invulnerable(): boolean {
     return (
-      this.state === 'knockdown' || this.state === 'down' || this.state === 'getup' || this.state === 'ko'
+      this.state === 'knockdown' ||
+      this.state === 'down' ||
+      this.state === 'getup' ||
+      this.state === 'ko' ||
+      (this.state === 'backdash' && this.stateTime <= PHYS.backdashInvulnFrames)
     );
   }
 
   /** Whether the fighter can start a new action right now. */
   isActionable(): boolean {
-    return this.state === 'idle' || this.state === 'walk' || this.state === 'block';
+    return this.state === 'idle' || this.state === 'walk' || this.state === 'block' || this.state === 'run';
   }
 
   get isBeingComboed(): boolean {
@@ -133,22 +175,37 @@ export class Fighter {
     return this.state !== 'knockdown' && this.state !== 'down' && this.state !== 'ko';
   }
 
+  /** True while a fresh block press would turn the next hit into a parry. */
+  get parryReady(): boolean {
+    return this.clock <= this.parryUntil;
+  }
+
   // ---------------------------------------------------------------- input
 
   setInput(input: FighterInput): void {
+    // A fresh block press opens a short parry window — unless one was opened very
+    // recently, so mashing block doesn't keep a window permanently open.
+    if (input.block && !this.held.block && this.clock - this.lastParryPress >= PHYS.parryLockout) {
+      this.lastParryPress = this.clock;
+      this.parryUntil = this.clock + PHYS.parryWindow;
+    }
     this.held = input;
     // Presses are buffered for a few frames so combos don't need frame-perfect timing.
     if (input.special) this.buffer = { button: 'special', frames: PHYS.inputBufferFrames };
+    else if (input.heavy) this.buffer = { button: 'heavy', frames: PHYS.inputBufferFrames };
     else if (input.punch) this.buffer = { button: 'punch', frames: PHYS.inputBufferFrames };
     else if (input.kick) this.buffer = { button: 'kick', frames: PHYS.inputBufferFrames };
+    if (input.dash) this.dashBuffer = PHYS.inputBufferFrames;
   }
 
   // ---------------------------------------------------------------- simulation
 
   update(): void {
+    this.clock++;
     this.stateTime++;
     if (this.hitFlash > 0) this.hitFlash--;
     if (this.buffer && --this.buffer.frames <= 0) this.buffer = null;
+    if (this.dashBuffer > 0) this.dashBuffer--;
 
     const inp = this.held;
     const fwd = this.facing === 1 ? inp.right : inp.left;
@@ -158,17 +215,30 @@ export class Fighter {
       case 'idle':
       case 'walk':
       case 'block':
+      case 'run':
         this.faceOpponent();
         if (this.tryStartAttack()) break;
+        if (this.tryDash(fwd, back)) break;
         if (inp.up) {
           this.jumpDir = fwd && !back ? 1 : back && !fwd ? -1 : 0;
-          this.vx = 0;
+          this.runJump = this.state === 'run' && this.jumpDir === 1;
+          if (!this.runJump) this.vx = 0;
           this.setState('prejump');
           break;
         }
         if (inp.block) {
           if (this.state !== 'block') this.setState('block');
           this.vx = 0;
+          break;
+        }
+        if (this.state === 'run') {
+          if (fwd && !back) {
+            this.vx = PHYS.runSpeed * this.facing;
+          } else {
+            this.vx *= 0.5;
+            this.landLag = RUN_STOP_FRAMES;
+            this.setState('land');
+          }
           break;
         }
         if (fwd !== back) {
@@ -180,11 +250,29 @@ export class Fighter {
         }
         break;
 
+      case 'dash': {
+        // Burst that eases down — into a run if forward is still held, else to a stop.
+        const u = Math.min(1, this.stateTime / PHYS.dashFrames);
+        const holding = fwd && !back && !inp.block;
+        const end = holding ? PHYS.runSpeed : 0;
+        this.vx = (end + (PHYS.dashSpeed - end) * Math.pow(1 - u, 0.7)) * this.facing;
+        if (this.stateTime >= PHYS.dashAttackFrom && this.tryStartAttack()) break;
+        if (u >= 1) this.setState(holding ? 'run' : 'idle');
+        break;
+      }
+
+      case 'backdash': {
+        const u = Math.min(1, this.stateTime / BACKDASH_TRAVEL);
+        this.vx = -PHYS.backdashSpeed * Math.pow(1 - u, 0.8) * this.facing;
+        if (this.stateTime >= PHYS.backdashFrames) this.setState('idle');
+        break;
+      }
+
       case 'prejump':
         if (this.stateTime >= PHYS.prejumpFrames) {
           this.grounded = false;
           this.vy = PHYS.jumpVelocity;
-          this.vx = this.jumpDir * PHYS.jumpSpeedX * this.facing;
+          this.vx = this.jumpDir * (this.runJump ? PHYS.runJumpSpeedX : PHYS.jumpSpeedX) * this.facing;
           this.airAttackUsed = false;
           this.setState('air');
           this.events.push('jump');
@@ -203,7 +291,14 @@ export class Fighter {
         if (this.stateTime >= this.landLag) this.setState('idle');
         break;
 
+      case 'parry':
+        // Deflect pose: an attack can come out of it at once (the counter); otherwise back to guard.
+        if (this.tryStartAttack()) break;
+        if (this.stateTime >= PHYS.parryFrames) this.setState(inp.block ? 'block' : 'idle');
+        break;
+
       case 'hitstun':
+      case 'parried':
         if (--this.stun <= 0) this.setState('idle');
         break;
 
@@ -258,6 +353,20 @@ export class Fighter {
     if (Math.abs(dx) > 2) this.facing = dx > 0 ? 1 : -1;
   }
 
+  /** Space: dash toward the opponent when holding forward; otherwise evade backwards. */
+  private tryDash(fwd: boolean, back: boolean): boolean {
+    if (this.dashBuffer <= 0 || !this.grounded) return false;
+    this.dashBuffer = 0;
+    if (fwd && !back) {
+      this.setState('dash');
+      this.events.push('dash');
+    } else {
+      this.setState('backdash');
+      this.events.push('evade');
+    }
+    return true;
+  }
+
   private tryStartAttack(): boolean {
     if (!this.buffer) return false;
     const button = this.buffer.button;
@@ -267,9 +376,10 @@ export class Fighter {
     }
     let id: MoveId;
     if (this.grounded) {
-      id = button === 'punch' ? 'jab' : 'frontKick';
+      id = button === 'punch' ? 'jab' : button === 'kick' ? 'frontKick' : this.def.heavy;
     } else {
       if (this.airAttackUsed) return false;
+      // No separate air heavy: U in the air is the (bigger) air kick.
       id = button === 'punch' ? 'airPunch' : 'airKick';
       this.airAttackUsed = true;
     }
@@ -292,13 +402,15 @@ export class Fighter {
   }
 
   private startMove(m: MoveData): void {
+    // Attacks out of a dash or run keep some of the momentum (a running strike).
+    const carried = this.state === 'dash' || this.state === 'run' ? this.vx * 0.6 : 0;
     this.setState('attack');
     this.move = m;
     this.moveFrame = 0;
     this.moveSerial++;
     this.moveConnected = false;
     this.moveHitDone = false;
-    if (!m.air) this.vx = 0;
+    if (!m.air) this.vx = carried;
   }
 
   private updateAttack(): void {
@@ -308,7 +420,10 @@ export class Fighter {
       return;
     }
     this.moveFrame++;
-    if (!m.air && m.lunge && this.moveFrame < m.startup) this.vx = m.lunge * this.facing;
+    if (!m.air && m.lunge && this.moveFrame < m.startup) {
+      // Step into the attack; carried run momentum fades but never below the lunge.
+      this.vx = Math.max(m.lunge, Math.abs(this.vx) * PHYS.friction) * this.facing;
+    }
     if (this.moveFrame === m.startup) this.events.push(m.special?.kind === 'projectile' ? 'projectile' : 'whoosh');
 
     const sp = m.special;
@@ -329,7 +444,8 @@ export class Fighter {
 
     // Chain cancel: once the move connects, a buffered button flows into the next move.
     if (this.moveConnected && this.buffer) {
-      const next = m.chain[this.buffer.button];
+      const b = this.buffer.button;
+      const next = b === 'heavy' ? (m.heavyCancel ? this.def.heavy : undefined) : m.chain[b];
       if (next) {
         this.buffer = null;
         this.startMove(MOVES[next]);
@@ -356,7 +472,9 @@ export class Fighter {
     } else {
       this.x += this.vx;
       const lunging = this.state === 'attack' && this.movePhase === 'startup' && !!this.move?.lunge;
-      if (this.state !== 'walk' && !lunging) {
+      const driven =
+        this.state === 'walk' || this.state === 'run' || this.state === 'dash' || this.state === 'backdash' || lunging;
+      if (!driven) {
         this.vx *= PHYS.friction;
         if (Math.abs(this.vx) < 0.05) this.vx = 0;
       }
@@ -382,6 +500,11 @@ export class Fighter {
         this.vx *= 0.3;
         this.setState(this.hp <= 0 ? 'ko' : 'down');
         this.events.push('groundImpact');
+        break;
+      case 'parried':
+        // A parried jump-in lands still staggered.
+        this.vx = 0;
+        this.events.push('land');
         break;
       default:
         break;
@@ -433,29 +556,63 @@ export class Fighter {
     this.moveConnected = true;
   }
 
+  /** This fighter's attack was parried: staggered and wide open for a counter. */
+  staggerFromParry(): void {
+    this.setState('parried');
+    this.stun = PHYS.parriedFrames;
+    this.buffer = null;
+    this.dashBuffer = 0;
+    if (this.grounded) this.vx = -this.facing * 3;
+    else this.vx *= 0.3;
+  }
+
   /**
-   * Applies an incoming attack. Returns true if it was blocked.
+   * Applies an incoming attack and reports whether it hit, was blocked or was parried.
    * `pushDir` overrides the knockback direction (projectiles push along their flight).
    */
-  receiveHit(move: MoveData, from: Fighter, pushDir?: number): boolean {
+  receiveHit(move: MoveData, from: Fighter, pushDir?: number): HitOutcome {
     const awayDir = pushDir ?? (Math.sign(this.x - from.x) || from.facing);
+    const faceAttacker = (): void => {
+      this.facing = awayDir === 1 ? -1 : 1;
+    };
     this.hitSerial++;
     this.lastHitHigh = move.hitbox.y + move.hitbox.h / 2 < -125;
 
+    const guarding =
+      this.grounded && (this.isActionable() || this.state === 'blockstun' || this.state === 'parry');
+    if (guarding && this.parryReady) {
+      this.parryUntil = -1; // one parry per press
+      this.setState('parry');
+      this.vx = 0;
+      this.buffer = null;
+      faceAttacker();
+      return { kind: 'parry', counter: false };
+    }
+
     const canBlock =
       this.grounded &&
-      (this.state === 'block' || this.state === 'blockstun' || (this.held.block && this.isActionable()));
+      (this.state === 'block' ||
+        this.state === 'blockstun' ||
+        this.state === 'parry' ||
+        (this.held.block && this.isActionable()));
     if (canBlock) {
       this.setState('blockstun');
       this.stun = move.blockstun;
       this.vx = move.blockPush * awayDir;
-      this.facing = awayDir === 1 ? -1 : 1;
-      return true;
+      faceAttacker();
+      return { kind: 'block', counter: false };
     }
 
-    this.hp = Math.max(0, this.hp - move.damage);
+    const counter =
+      this.state === 'parried' ||
+      (this.state === 'attack' && this.movePhase === 'startup') ||
+      (this.state === 'backdash' && this.stateTime > PHYS.backdashInvulnFrames);
+    const damage = counter ? Math.round(move.damage * PHYS.counterDamage) : move.damage;
+    this.hp = Math.max(0, this.hp - damage);
     this.hitFlash = 5;
     this.buffer = null;
+    this.dashBuffer = 0;
+    this.lastHitHeavy = move.heavy;
     const ko = this.hp <= 0;
 
     if (ko || move.knockdown || !this.grounded) {
@@ -465,9 +622,9 @@ export class Fighter {
       this.vx = (move.knockback * 0.7 + (ko ? 4 : 1)) * awayDir;
     } else {
       this.setState('hitstun');
-      this.stun = move.hitstun;
+      this.stun = move.hitstun + (counter ? PHYS.counterHitstun : 0);
       this.vx = move.knockback * awayDir;
     }
-    return false;
+    return { kind: 'hit', counter };
   }
 }

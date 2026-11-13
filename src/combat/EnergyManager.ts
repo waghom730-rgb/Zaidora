@@ -8,6 +8,8 @@ export const ENERGY_RULES = {
   blockedGainRatio: 0.4,
   /** Reward for successfully blocking an attack (well-timed defence). */
   guardGain: 4,
+  /** Reward for a parry — the riskiest, best-timed defence. */
+  parryGain: 12,
 } as const;
 
 /**
@@ -41,7 +43,10 @@ export class EnergyManager {
   }
 
   onHit(h: HitEvent): void {
-    if (h.blocked) {
+    if (h.parried) {
+      // A parried attack earns its thrower nothing.
+      this.add(h.defender, ENERGY_RULES.parryGain);
+    } else if (h.blocked) {
       this.add(h.attacker, h.move.energyGain * ENERGY_RULES.blockedGainRatio);
       this.add(h.defender, ENERGY_RULES.guardGain);
     } else {

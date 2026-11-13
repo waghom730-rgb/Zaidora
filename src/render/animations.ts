@@ -59,6 +59,12 @@ export interface AnimSet {
   /** Walk cycle, sampled by distance travelled (played backwards when retreating). */
   walk: Clip;
   stride: number;
+  /** Run cycle, sampled by distance like the walk. */
+  run: Clip;
+  runStride: number;
+  dash: Clip;
+  /** Evade: a quick backward hop. */
+  backdash: Clip;
   prejump: Clip;
   land: Clip;
   airNeutral: Clip;
@@ -66,8 +72,14 @@ export interface AnimSet {
   airFlipB: Clip;
   block: Clip;
   blockstun: Clip;
+  /** Successful parry: the guard sweeps the attack aside. */
+  parry: Clip;
+  /** Attacker after being parried: staggered, arms thrown wide. */
+  parried: Clip;
   hitHigh: Clip;
   hitBody: Clip;
+  /** Heavy hit: a big stagger. */
+  hitHeavy: Clip;
   knockdown: Clip;
   down: Clip;
   getup: Clip;
@@ -121,6 +133,18 @@ const ATTACK_KEYS: Record<MoveId, AttackKeys> = {
     strike: { lean: -12, armF: [60, 90], armB: [-20, 70], legF: [60, 8], legB: [10, -115] },
     follow: { lean: -13, armF: [60, 90], armB: [-20, 70], legF: [62, 6], legB: [10, -115] },
   },
+  // Kaen: twists away with the rear fist cocked behind the head, then a lunging haymaker.
+  flameStrike: {
+    windup: { lean: -10, bodyX: -8, head: 4, squash: 0.95, armF: [70, 80], armB: [-70, 110], legF: [48, -58], legB: [-30, 2] },
+    strike: { lean: 30, bodyX: 18, head: 6, squash: 1, armF: [20, 120], armB: [100, -6], legF: [55, -45], legB: [-40, 5] },
+    follow: { lean: 32, bodyX: 19, head: 6, squash: 1, armF: [20, 120], armB: [102, -8], legF: [55, -45], legB: [-40, 5] },
+  },
+  // Yoru: blade hand raised high, glides in and cuts down through the target.
+  shadowSlash: {
+    windup: { lean: -8, bodyX: -6, head: 6, armF: [160, 60], armB: [-30, 60], legF: [44, -52], legB: [-34, 4] },
+    strike: { lean: 18, bodyX: 14, head: -4, armF: [135, -10], armB: [-50, 40], legF: [58, -50], legB: [-42, 6] },
+    follow: { lean: 30, bodyX: 16, head: -8, armF: [95, -5], armB: [-55, 40], legF: [58, -50], legB: [-42, 6] },
+  },
   // Kaen: fist chambered at the hip while flame gathers, then a deep straight punch launches it.
   fireball: {
     windup: { lean: -6, bodyX: -6, head: 2, squash: 0.95, armF: [-20, 120], armB: [70, 80], legF: [48, -58], legB: [-32, 4] },
@@ -157,7 +181,36 @@ function attackClip(stance: Pose, airRest: Pose, m: MoveData): Clip {
   };
 }
 
-function sharedClips(stance: Pose): Omit<AnimSet, 'stance' | 'idle' | 'walk' | 'stride' | 'intro' | 'victory'> {
+type PerCharacterClips = 'stance' | 'idle' | 'walk' | 'stride' | 'run' | 'runStride' | 'dash' | 'intro' | 'victory';
+
+/**
+ * Run cycle: the two legs swap every half cycle (reach → pass → reach → pass).
+ * `upper` sets the torso and arms; `armsA`/`armsB` alternate them for an arm pump.
+ */
+function runCycle(stance: Pose, upper: Partial<Pose>, armsA: Partial<Pose>, armsB: Partial<Pose>): Clip {
+  const P = (p: Partial<Pose>) => withPose(stance, { ...upper, ...p });
+  const reachF = P({ ...armsA, legF: [65, -55], legB: [-35, -35] });
+  const passF = P({ ...armsA, lift: 4, legF: [10, -25], legB: [45, -120] });
+  const reachB = P({ ...armsB, legF: [-35, -35], legB: [65, -55] });
+  const passB = P({ ...armsB, lift: 4, legF: [45, -120], legB: [10, -25] });
+  return {
+    keys: [K(0, reachF), K(8, passF, 'io'), K(16, reachB, 'io'), K(24, passB, 'io'), K(32, reachF, 'io')],
+    loopFrom: 0,
+  };
+}
+
+/** Forward dash: crouched launch, one long extended stride, settle. */
+function dashClip(stance: Pose, upper: Partial<Pose>): Clip {
+  const P = (p: Partial<Pose>) => withPose(stance, { ...upper, ...p });
+  const launch = P({ squash: 0.92, legF: [70, -80], legB: [-35, -10] });
+  const stride = P({ lift: 8, squash: 1.04, legF: [55, -20], legB: [-55, -45] });
+  const gather = P({ lift: 3, legF: [30, -70], legB: [-20, -60] });
+  return {
+    keys: [K(0, launch), K(4, stride, 'out'), K(11, gather, 'io'), K(16, withPose(stance, { lean: stance.lean + 8 }), 'io')],
+  };
+}
+
+function sharedClips(stance: Pose): Omit<AnimSet, PerCharacterClips> {
   const P = (p: Partial<Pose>) => withPose(stance, p);
 
   const crouch = P({ lean: 16, head: 0, armF: [45, 100], armB: [25, 125], legF: [62, -85], legB: [12, -75] });
@@ -234,6 +287,22 @@ function sharedClips(stance: Pose): Omit<AnimSet, 'stance' | 'idle' | 'walk' | '
     legB: [-20, -30],
   });
 
+  // Evade: drop, hop back with the guard up, land and reset.
+  const evadeCrouch = P({ lean: -16, head: 8, squash: 0.9, armF: [50, 110], armB: [30, 120], legF: [55, -80], legB: [-5, -70] });
+  const evadeHop = P({ lean: -20, head: 10, squash: 1.05, lift: 24, armF: [40, 100], armB: [10, 110], legF: [50, -100], legB: [10, -110] });
+  const evadeFall = P({ lean: -10, head: 4, lift: 10, armF: [45, 105], armB: [20, 120], legF: [45, -70], legB: [-10, -50] });
+  const evadeLand = P({ lean: -6, squash: 0.9, armF: [50, 105], armB: [25, 125], legF: [50, -70], legB: [-20, -30] });
+
+  // Parry: the lead arm sweeps the attack up and away.
+  const deflect = P({ lean: -8, head: -4, bodyX: -4, armF: [150, -30], armB: [40, 100], legF: [40, -46], legB: [-22, -10] });
+
+  // Parried: thrown off balance, arms flung back, wide open.
+  const reel = P({ lean: -30, head: -26, bodyX: -14, armF: [-50, 40], armB: [-80, 30], legF: [42, -50], legB: [-30, 0] });
+  const reelSway = withPose(reel, { lean: -22, head: -16, bodyX: -10, armF: [-35, 50], armB: [-65, 40] });
+
+  // Heavy hit: the whole body is knocked back and up for a moment.
+  const heavyRecoil = P({ lean: -36, head: -34, bodyX: -16, lift: 4, armF: [-30, 40], armB: [-60, 30], legF: [50, -40], legB: [-20, -10] });
+
   const airRest = airFall;
   const attacks = {} as Record<MoveId, Clip>;
   for (const id of Object.keys(MOVES) as MoveId[]) attacks[id] = attackClip(stance, airRest, MOVES[id]);
@@ -250,8 +319,33 @@ function sharedClips(stance: Pose): Omit<AnimSet, 'stance' | 'idle' | 'walk' | '
     airFlipB: {
       keys: [K(0, airLaunch), K(5, flipTuck(0), 'out'), K(27, flipTuck(-360), 'io'), K(33, withPose(airFall, { rootRot: -360 }), 'out')],
     },
+    backdash: {
+      keys: [K(0, evadeCrouch), K(4, evadeHop, 'out'), K(12, evadeFall, 'io'), K(16, evadeLand, 'in'), K(24, stance, 'io')],
+    },
     block: { keys: [K(0, block)] },
     blockstun: { keys: [K(0, blockRecoil), K(7, block, 'out')] },
+    parry: {
+      keys: [K(0, block), K(2, deflect, 'snap'), K(10, withPose(deflect, { lean: -4, armF: [135, -20] }), 'out')],
+    },
+    parried: {
+      keys: [
+        K(0, reel),
+        K(5, withPose(reel, { lean: -36, head: -32, bodyX: -18 }), 'out'),
+        K(14, reelSway, 'io'),
+        K(22, withPose(reel, { lean: -32, head: -28 }), 'io'),
+        K(30, reelSway, 'io'),
+      ],
+      loopFrom: 14,
+    },
+    hitHeavy: {
+      keys: [
+        K(0, heavyRecoil),
+        K(5, withPose(heavyRecoil, { lean: -42, head: -40, bodyX: -20, lift: 6 }), 'out'),
+        K(14, withPose(heavyRecoil, { lean: -24, head: -18, bodyX: -12, lift: 0, legF: [46, -60], legB: [-30, 0] }), 'io'),
+        K(22, withPose(guardBack, { lean: -10 }), 'io'),
+        K(30, stance, 'io'),
+      ],
+    },
     hitHigh: {
       keys: [
         K(0, hitHigh),
@@ -316,6 +410,15 @@ function buildKaen(): AnimSet {
       loopFrom: 0,
     },
     stride: 64,
+    // Boxer's run: upright-ish, fists pumping.
+    run: runCycle(
+      stance,
+      { lean: 20, head: -4 },
+      { armF: [-20, 100], armB: [60, 80] },
+      { armF: [60, 80], armB: [-20, 100] },
+    ),
+    runStride: 190,
+    dash: dashClip(stance, { lean: 26, head: -6, armF: [80, 60], armB: [-45, 85] }),
     intro: {
       keys: [
         K(0, intro0),
@@ -367,6 +470,15 @@ function buildYoru(): AnimSet {
       loopFrom: 0,
     },
     stride: 70,
+    // Shadow sprint: bent low, arms trailing straight back.
+    run: runCycle(
+      stance,
+      { lean: 38, head: -14 },
+      { armF: [-60, 20], armB: [-75, 15] },
+      { armF: [-55, 18], armB: [-70, 12] },
+    ),
+    runStride: 200,
+    dash: dashClip(stance, { lean: 40, head: -14, armF: [-60, 20], armB: [-75, 15] }),
     intro: {
       keys: [
         K(0, crossed),

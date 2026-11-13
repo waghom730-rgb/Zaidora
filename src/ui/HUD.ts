@@ -19,6 +19,8 @@ export class HUD {
   private readonly winMarks: Phaser.GameObjects.Graphics;
   private readonly comboTexts: [Phaser.GameObjects.Text, Phaser.GameObjects.Text];
   private readonly comboTimers: [number, number] = [0, 0];
+  /** Small per-side callouts under the combo counter: PARRY!, COUNTER. */
+  private readonly callouts: [Phaser.GameObjects.Text, Phaser.GameObjects.Text];
   private readonly banner: Phaser.GameObjects.Text;
   private bannerTween: Phaser.Tweens.Tween | null = null;
 
@@ -90,6 +92,10 @@ export class HUD {
       text(56, 230, '', textStyle(46, '#ffe066')).setOrigin(0, 0.5).setDepth(d).setAlpha(0),
       text(GAME_WIDTH - 56, 230, '', textStyle(46, '#ffe066')).setOrigin(1, 0.5).setDepth(d).setAlpha(0),
     ];
+    this.callouts = [
+      text(58, 280, '', textStyle(30, '#ffffff')).setOrigin(0, 0.5).setDepth(d).setAlpha(0),
+      text(GAME_WIDTH - 58, 280, '', textStyle(30, '#ffffff')).setOrigin(1, 0.5).setDepth(d).setAlpha(0),
+    ];
 
     this.banner = text(CX, 300, '', textStyle(120, '#ffffff'))
       .setOrigin(0.5)
@@ -99,7 +105,7 @@ export class HUD {
     text(
       CX,
       706,
-      'A / D  move     W  jump     J  punch     K  kick     L  special     S  block     ESC  pause',
+      'A / D  move   W  jump   J  punch   K  kick   U  heavy   L  special   S  block (tap = parry)   SPACE  dash / evade   ESC  pause',
       textStyle(13, '#ffffff', { italic: false, strokeRatio: 0.3 }),
     )
       .setOrigin(0.5, 1)
@@ -166,6 +172,15 @@ export class HUD {
     t.setText(`${count} HITS`).setAlpha(1).setScale(1.5);
     this.scene.tweens.add({ targets: t, scale: 1, duration: 160, ease: 'Back.easeOut' });
     this.comboTimers[index] = 1100;
+  }
+
+  /** Short side callout (PARRY!, COUNTER) for player `index`'s side of the screen. */
+  callout(index: 0 | 1, label: string, color: string): void {
+    const t = this.callouts[index];
+    this.scene.tweens.killTweensOf(t);
+    t.setText(label).setColor(color).setAlpha(1).setScale(1.6);
+    this.scene.tweens.add({ targets: t, scale: 1, duration: 180, ease: 'Back.easeOut' });
+    this.scene.tweens.add({ targets: t, alpha: 0, delay: 700, duration: 300 });
   }
 
   announce(text: string, opts: { color?: string; size?: number; hold?: number } = {}): void {

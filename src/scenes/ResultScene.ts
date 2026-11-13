@@ -4,6 +4,7 @@ import { DEPTH, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, type Difficulty } from '../co
 import { Effects } from '../effects/Effects';
 import { FIGHTERS, opponentOf, type FighterId } from '../entities/fighterDefs';
 import { audio } from '../systems/AudioManager';
+import { onKeyPress } from '../systems/InputManager';
 import { textStyle } from '../ui/textStyles';
 import { Showcase } from './showcase';
 
@@ -75,7 +76,7 @@ export class ResultScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
     this.tweens.add({ targets: prompt, alpha: 0.4, duration: 600, yoyo: true, repeat: -1 });
 
-    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+    onKeyPress(this, (e) => {
       audio.unlock();
       if (this.leaving) return;
       if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyJ') this.leave('FightScene');

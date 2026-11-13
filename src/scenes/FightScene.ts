@@ -11,6 +11,7 @@ import {
   GAME_WIDTH,
   GROUND_Y,
   MAX_HP,
+  PHYS,
   ROUND_SECONDS,
   ROUNDS_TO_WIN,
   STEP_MS,
@@ -24,7 +25,7 @@ import { INTRO_CUE } from '../render/animations';
 import { FighterRig } from '../render/FighterRig';
 import { audio } from '../systems/AudioManager';
 import { EnemyAI } from '../systems/EnemyAI';
-import { InputManager } from '../systems/InputManager';
+import { InputManager, onKeyPress } from '../systems/InputManager';
 import { HUD } from '../ui/HUD';
 import { textStyle } from '../ui/textStyles';
 import type { ResultData } from './ResultScene';
@@ -147,7 +148,7 @@ export class FightScene extends Phaser.Scene {
     );
     this.buildPauseLayer();
 
-    this.input.keyboard?.on('keydown', this.onKey, this);
+    onKeyPress(this, (e) => this.onKey(e));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
 
     this.cameras.cameras.forEach((c) => c.fadeIn(350));
@@ -268,8 +269,20 @@ export class FightScene extends Phaser.Scene {
 
   private onHit(h: HitEvent): void {
     const attackerIndex = h.attacker === this.p1 ? 0 : 1;
+    const defenderIndex = attackerIndex === 0 ? 1 : 0;
     this.lastDefender = h.defender;
     this.energy.onHit(h);
+
+    if (h.parried) {
+      // A longer freeze than any hit: the moment the attack is turned aside should register.
+      this.hitstop = Math.max(this.hitstop, 14);
+      this.lastDefender = h.projectile ? h.defender : h.attacker;
+      this.fx.parry(h.x, h.y);
+      audio.play('parry');
+      this.cameras.main.flash(90, 255, 236, 160);
+      this.hud.callout(defenderIndex, 'PARRY!', '#ffe066');
+      return;
+    }
 
     if (h.blocked) {
       this.hitstop = Math.max(this.hitstop, h.move.hitstop - 2);
@@ -278,13 +291,17 @@ export class FightScene extends Phaser.Scene {
       return;
     }
 
-    const heavy = h.move.heavy || h.ko;
-    this.hitstop = Math.max(this.hitstop, h.move.hitstop + (h.ko ? 16 : 0));
+    const heavy = h.move.heavy || h.ko || h.counter;
+    this.hitstop = Math.max(this.hitstop, h.move.hitstop + (h.ko ? 16 : 0) + (h.counter ? PHYS.counterHitstop : 0));
     this.fx.hit(h.x, h.y, heavy, h.attacker.def.fx);
     audio.play(heavy ? 'hitHeavy' : 'hitLight');
     this.cameras.main.shake(heavy ? 200 : 70, heavy ? 0.009 : 0.003);
+    if (h.counter) {
+      audio.play('counter');
+      this.hud.callout(attackerIndex, 'COUNTER', '#ff6a4d');
+    }
 
-    this.hud.setHealth(attackerIndex === 0 ? 1 : 0, h.defender.hp / MAX_HP);
+    this.hud.setHealth(defenderIndex, h.defender.hp / MAX_HP);
     if (h.combo >= 2) this.hud.showCombo(attackerIndex, h.combo);
 
     if (h.attacker === this.p1) {
@@ -317,6 +334,14 @@ export class FightScene extends Phaser.Scene {
         case 'jump':
           audio.play('jump');
           this.fx.dust(f.x, GROUND_Y, 4);
+          break;
+        case 'dash':
+          audio.play('step');
+          this.fx.dust(f.x - f.facing * 30, GROUND_Y, 6);
+          break;
+        case 'evade':
+          audio.play('step');
+          this.fx.dust(f.x + f.facing * 20, GROUND_Y, 5);
           break;
         case 'land':
           audio.play('land');

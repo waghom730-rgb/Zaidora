@@ -14,6 +14,9 @@ export type Sfx =
   | 'powerup'
   | 'fireball'
   | 'dash'
+  | 'step'
+  | 'parry'
+  | 'counter'
   | 'denied';
 
 /**
@@ -113,6 +116,20 @@ class AudioManager {
       case 'dash':
         this.noiseBurst('bandpass', 3000, 600, 1.6, 0.22, 0.4, t);
         this.tone('triangle', 900, 200, 0.18, 0.12, t);
+        break;
+      case 'step':
+        // Quick scuff for movement dashes and evades.
+        this.noiseBurst('bandpass', 1800, 700, 1.2, 0.1, 0.28, t);
+        break;
+      case 'parry':
+        // Bright metallic "ting" with a short shimmer.
+        this.tone('triangle', 2100, 2100, 0.22, 0.28, t);
+        this.tone('sine', 3150, 3150, 0.3, 0.12, t + 0.01);
+        this.noiseBurst('highpass', 5000, 3000, 0.8, 0.08, 0.3, t);
+        break;
+      case 'counter':
+        this.tone('sawtooth', 600, 1200, 0.12, 0.1, t);
+        this.tone('square', 900, 900, 0.1, 0.06, t + 0.08);
         break;
       case 'denied':
         this.tone('square', 140, 110, 0.12, 0.12, t);

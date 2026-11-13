@@ -27,6 +27,31 @@ export const PHYS = {
   downFrames: 42,
   getupFrames: 18,
   inputBufferFrames: 10,
+
+  /** Forward dash: a burst that fades out over its length; attacks can cancel it from `dashAttackFrom`. */
+  dashFrames: 16,
+  dashSpeed: 11,
+  dashAttackFrom: 6,
+  /** Keep holding forward after a dash to run. */
+  runSpeed: 7.2,
+  runJumpSpeedX: 7,
+  /** Evade (backstep): strike- and projectile-invulnerable for the first frames, then punishable. */
+  backdashFrames: 24,
+  backdashSpeed: 10.5,
+  backdashInvulnFrames: 10,
+
+  /** Parry: a fresh block press up to this many frames before a hit lands. */
+  parryWindow: 6,
+  /** After a block press, another press can't open a new window this soon (no mashing). */
+  parryLockout: 24,
+  /** Defender's deflect pose after a parry; can act out of it immediately with an attack. */
+  parryFrames: 10,
+  /** How long a parried attacker is staggered and open to a counter. */
+  parriedFrames: 28,
+  /** Counter hit (hitting startup, a stagger or an evade's recovery): bonus damage and hitstun. */
+  counterDamage: 1.25,
+  counterHitstun: 8,
+  counterHitstop: 4,
 } as const;
 
 export const DEPTH = {

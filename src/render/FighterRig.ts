@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { Fighter } from '../entities/Fighter';
 import type { FighterId } from '../entities/fighterDefs';
 import { ART_RES, headKey, partKey, partOrigin, type Expression, type PartId } from './CharacterArt';
-import { getAnimSet, sampleClip, type AnimSet, type Clip } from './animations';
+import { clipLength, getAnimSet, sampleClip, type AnimSet, type Clip } from './animations';
 import { NEUTRAL, clonePose, copyPose, mixPose, type Pose } from './poses';
 import { Rope, type RopeOptions } from './Rope';
 
@@ -188,6 +188,7 @@ export class FighterRig {
   private blendTime = 0;
   private blendLen = 1;
   private walkDist = 0;
+  private runDist = 0;
   private clock = 0;
   private expression: Expression = 'normal';
   private flashing = false;
@@ -293,6 +294,7 @@ export class FighterRig {
     this.clock++;
     const f = this.f;
     if (f.state === 'walk') this.walkDist += f.vx * f.facing;
+    if (f.state === 'run') this.runDist += Math.abs(f.vx);
 
     const sel = this.selectClip();
     if (sel.key !== this.clipKey) {
@@ -326,9 +328,21 @@ export class FighterRig {
       case 'idle':
         return { key: 'idle', clip: A.idle, blend: 6 };
       case 'walk': {
-        const len = A.walk.keys[A.walk.keys.length - 1].t;
+        const len = clipLength(A.walk);
         return { key: 'walk', clip: A.walk, time: mod((this.walkDist / A.stride) * len, len), blend: 5 };
       }
+      case 'run': {
+        const len = clipLength(A.run);
+        return { key: 'run', clip: A.run, time: mod((this.runDist / A.runStride) * len, len), blend: 4 };
+      }
+      case 'dash':
+        return { key: 'dash', clip: A.dash, blend: 2 };
+      case 'backdash':
+        return { key: 'backdash', clip: A.backdash, blend: 1 };
+      case 'parry':
+        return { key: `parry${f.hitSerial}`, clip: A.parry, blend: 1 };
+      case 'parried':
+        return { key: 'parried', clip: A.parried, blend: 1 };
       case 'prejump':
         return { key: 'prejump', clip: A.prejump, blend: 2 };
       case 'air':
@@ -341,7 +355,11 @@ export class FighterRig {
       case 'blockstun':
         return { key: `blockstun${f.hitSerial}`, clip: A.blockstun, blend: 1 };
       case 'hitstun':
-        return { key: `hit${f.hitSerial}`, clip: f.lastHitHigh ? A.hitHigh : A.hitBody, blend: 0 };
+        return {
+          key: `hit${f.hitSerial}`,
+          clip: f.lastHitHeavy ? A.hitHeavy : f.lastHitHigh ? A.hitHigh : A.hitBody,
+          blend: 0,
+        };
       case 'knockdown':
         return { key: 'knockdown', clip: A.knockdown, blend: 1 };
       case 'down':
@@ -365,11 +383,14 @@ export class FighterRig {
     const f = this.f;
     switch (f.state) {
       case 'hitstun':
+      case 'parried':
       case 'knockdown':
       case 'down':
       case 'ko':
       case 'lose':
         return 'hurt';
+      case 'parry':
+        return 'shout';
       case 'getup':
         return this.clipTime < 8 ? 'hurt' : 'normal';
       case 'attack': {
@@ -407,7 +428,7 @@ export class FighterRig {
     // Grounded: plant the lowest foot on the floor. Airborne: fixed hip height.
     const grounded = f.grounded && f.state !== 'knockdown';
     const auto = grounded ? -(Math.max(ankF.y, ankB.y) + FOOT_CLEARANCE) : -AIR_HIP;
-    const hipY = auto + (-18 - auto) * p.lying;
+    const hipY = auto + (-18 - auto) * p.lying - p.lift;
     this.hipLocal = { x: p.bodyX, y: hipY };
     this.body.setPosition(p.bodyX, hipY).setRotation(p.rootRot * DEG);
 
@@ -480,8 +501,10 @@ export class FighterRig {
     const m = f.move;
     const inWindow = f.state === 'attack' && m && f.moveFrame >= m.startup - 2 && f.moveFrame <= m.startup + m.active + 1;
     if (inWindow && m) {
-      const usesHand = m.id === 'jab' || m.id === 'airPunch' || m.id === 'fireball' || m.id === 'shadowDash';
-      const limb = m.id === 'cross' ? this.handB : usesHand ? this.handF : this.toeF;
+      const usesHand =
+        m.id === 'jab' || m.id === 'airPunch' || m.id === 'fireball' || m.id === 'shadowDash' || m.id === 'shadowSlash';
+      const rearHand = m.id === 'cross' || m.id === 'flameStrike';
+      const limb = rearHand ? this.handB : usesHand ? this.handF : this.toeF;
       this.trail.push(this.toWorld(limb));
       if (this.trail.length > 7) this.trail.shift();
     } else if (this.trail.length) {
@@ -495,6 +518,9 @@ export class FighterRig {
     const m = f.move;
     const dashing = m?.special?.kind === 'dash' && f.movePhase === 'active';
     if (dashing) {
+      this.spawnGhost();
+    } else if ((f.state === 'dash' || f.state === 'backdash') && f.stateTime <= 10 && f.stateTime % 3 === 1) {
+      // Movement afterimages — fewer than an attack's, so they read as speed, not a strike.
       this.spawnGhost();
     } else if (f.state === 'attack' && m?.heavy && f.moveFrame >= m.startup - 4 && f.moveFrame <= m.startup + m.active && f.moveFrame % 2 === 0) {
       this.spawnGhost();

@@ -8,7 +8,12 @@ export interface HitEvent {
   attacker: Fighter;
   defender: Fighter;
   move: MoveData;
+  /** True for blocks and parries — no damage either way. */
   blocked: boolean;
+  /** The defender parried: the attacker is staggered (unless it was a projectile). */
+  parried: boolean;
+  /** Counter hit: landed on startup, a stagger or an evade's recovery. */
+  counter: boolean;
   ko: boolean;
   /** Combo length including this hit (0 when blocked). */
   combo: number;
@@ -141,14 +146,20 @@ export class CombatManager {
       if (!projectile) att.registerContact();
       const wasComboed = def.isBeingComboed;
       const hpBefore = def.hp;
-      const blocked = def.receiveHit(move, att, projectile ? Math.sign(projectile.vx) : undefined);
+      const outcome = def.receiveHit(move, att, projectile ? Math.sign(projectile.vx) : undefined);
+      const blocked = outcome.kind !== 'hit';
+      const parried = outcome.kind === 'parry';
 
       att.combo = blocked ? 0 : wasComboed ? att.combo + 1 : 1;
 
-      // Attacking someone in the corner pushes the attacker back instead.
-      const nearWall = att.facing === 1 ? def.x >= STAGE_RIGHT - 40 : def.x <= STAGE_LEFT + 40;
-      if (!projectile && nearWall && att.grounded) {
-        att.vx = -att.facing * (blocked ? move.blockPush : move.knockback) * 0.8;
+      if (parried && !projectile) {
+        att.staggerFromParry();
+      } else {
+        // Attacking someone in the corner pushes the attacker back instead.
+        const nearWall = att.facing === 1 ? def.x >= STAGE_RIGHT - 40 : def.x <= STAGE_LEFT + 40;
+        if (!projectile && nearWall && att.grounded) {
+          att.vx = -att.facing * (blocked ? move.blockPush : move.knockback) * 0.8;
+        }
       }
 
       return {
@@ -156,6 +167,8 @@ export class CombatManager {
         defender: def,
         move,
         blocked,
+        parried,
+        counter: outcome.counter,
         ko: def.hp <= 0,
         combo: att.combo,
         damage: hpBefore - def.hp,

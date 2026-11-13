@@ -1,7 +1,17 @@
 import type { Box } from './types';
 
-export type AttackButton = 'punch' | 'kick' | 'special';
-export type MoveId = 'jab' | 'cross' | 'frontKick' | 'roundhouse' | 'airPunch' | 'airKick' | 'fireball' | 'shadowDash';
+export type AttackButton = 'punch' | 'kick' | 'heavy' | 'special';
+export type MoveId =
+  | 'jab'
+  | 'cross'
+  | 'frontKick'
+  | 'roundhouse'
+  | 'airPunch'
+  | 'airKick'
+  | 'flameStrike'
+  | 'shadowSlash'
+  | 'fireball'
+  | 'shadowDash';
 
 /** Extra rules for energy-powered special moves. */
 export interface SpecialData {
@@ -46,6 +56,8 @@ export interface MoveData {
   readonly chain: Partial<Record<AttackButton, MoveId>>;
   /** Energy the attacker earns when this connects (a share of it when blocked). */
   readonly energyGain: number;
+  /** Whether this move can cancel into the character's heavy attack (U) when it connects. */
+  readonly heavyCancel: boolean;
   /** Whether this move can cancel into the character's special when it connects. */
   readonly specialCancel: boolean;
   readonly special?: SpecialData;
@@ -57,6 +69,7 @@ const base = {
   air: false,
   lunge: 0,
   chain: {},
+  heavyCancel: false,
   specialCancel: false,
 } as const;
 
@@ -77,6 +90,7 @@ export const MOVES: Record<MoveId, MoveData> = {
     hitbox: { x: 50, y: -150, w: 50, h: 34 },
     chain: { punch: 'cross', kick: 'roundhouse' },
     energyGain: 4,
+    heavyCancel: true,
     specialCancel: true,
   },
   cross: {
@@ -96,6 +110,7 @@ export const MOVES: Record<MoveId, MoveData> = {
     hitbox: { x: 55, y: -150, w: 56, h: 36 },
     chain: { kick: 'roundhouse' },
     energyGain: 6,
+    heavyCancel: true,
     specialCancel: true,
   },
   frontKick: {
@@ -115,6 +130,7 @@ export const MOVES: Record<MoveId, MoveData> = {
     hitbox: { x: 55, y: -114, w: 60, h: 40 },
     chain: { kick: 'roundhouse' },
     energyGain: 6,
+    heavyCancel: true,
     specialCancel: true,
   },
   roundhouse: {
@@ -169,6 +185,51 @@ export const MOVES: Record<MoveId, MoveData> = {
     air: true,
     hitbox: { x: 45, y: -80, w: 58, h: 48 },
     energyGain: 6,
+  },
+
+  // ---------------------------------------------------------------- heavies (U)
+  // Slow, big-damage strikes with a heavy stagger on hit. Unsafe on block (about −10),
+  // so throwing one raw is a risk; chaining one from a confirmed hit is the safe way.
+
+  /** Kaen: a lunging rear-hand haymaker wrapped in flame. */
+  flameStrike: {
+    ...base,
+    id: 'flameStrike',
+    name: 'Flame Strike',
+    startup: 13,
+    active: 4,
+    recovery: 22,
+    damage: 14,
+    hitstun: 26,
+    blockstun: 14,
+    knockback: 7,
+    blockPush: 5,
+    hitstop: 12,
+    heavy: true,
+    lunge: 3,
+    hitbox: { x: 50, y: -162, w: 68, h: 52 },
+    energyGain: 9,
+    specialCancel: true,
+  },
+  /** Yoru: a gliding, high-to-low blade-hand slash. Faster and longer, but less damage. */
+  shadowSlash: {
+    ...base,
+    id: 'shadowSlash',
+    name: 'Shadow Slash',
+    startup: 11,
+    active: 5,
+    recovery: 21,
+    damage: 12,
+    hitstun: 25,
+    blockstun: 14,
+    knockback: 6.5,
+    blockPush: 5,
+    hitstop: 11,
+    heavy: true,
+    lunge: 4,
+    hitbox: { x: 44, y: -184, w: 72, h: 66 },
+    energyGain: 8,
+    specialCancel: true,
   },
 
   // ---------------------------------------------------------------- specials (L)

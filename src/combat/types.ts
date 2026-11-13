@@ -8,7 +8,8 @@ export interface Box {
 
 /**
  * What a controller (keyboard or AI) wants a fighter to do this step.
- * Directions and block are "held"; punch/kick are presses (true only on the step they happen).
+ * Directions and block are "held"; punch/kick/heavy/special/dash are presses
+ * (true only on the step they happen).
  */
 export interface FighterInput {
   left: boolean;
@@ -17,7 +18,10 @@ export interface FighterInput {
   block: boolean;
   punch: boolean;
   kick: boolean;
+  heavy: boolean;
   special: boolean;
+  /** Dash toward the opponent, or evade (backstep) when holding back or no direction. */
+  dash: boolean;
 }
 
 export const EMPTY_INPUT: Readonly<FighterInput> = Object.freeze({
@@ -27,7 +31,9 @@ export const EMPTY_INPUT: Readonly<FighterInput> = Object.freeze({
   block: false,
   punch: false,
   kick: false,
+  heavy: false,
   special: false,
+  dash: false,
 });
 
 export function boxesOverlap(a: Box, b: Box): boolean {

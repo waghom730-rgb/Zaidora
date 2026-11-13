@@ -36,6 +36,8 @@ export interface FighterDef {
   /** CSS color for names in the UI. */
   uiColor: string;
   fx: FxStyle;
+  /** Heavy attack on the U key. */
+  heavy: MoveId;
   /** Energy special on the L key. */
   special: MoveId;
   specialName: string;
@@ -52,6 +54,7 @@ export const KAEN: FighterDef = {
   blurb: ['Hot-blooded street brawler', 'Relentless pressure, crimson flames', 'Fists wrapped, never backs down'],
   uiColor: '#ffb27a',
   fx: 'fire',
+  heavy: 'flameStrike',
   special: 'fireball',
   specialName: 'Fireball',
   trailColor: 0xff8a2a,
@@ -82,6 +85,7 @@ export const YORU: FighterDef = {
   blurb: ['Masked shadow-arts master', 'Calm, precise, punishes mistakes', 'Strikes from the dark'],
   uiColor: '#c3b0ff',
   fx: 'shadow',
+  heavy: 'shadowSlash',
   special: 'shadowDash',
   specialName: 'Shadow Dash',
   trailColor: 0x9a7bff,
