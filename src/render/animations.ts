@@ -95,6 +95,51 @@ export interface AnimSet {
   step: StepStyle;
   /** Steps a turn-around takes (the body swings through edge-on). */
   turnFrames: number;
+  /** Breathing and weight shift layered on top of the idle clip. */
+  life: IdleLife;
+}
+
+/**
+ * Life layered on the idle clip. Its periods differ from the clip's and from each other, so the
+ * standing pose takes a long time to repeat exactly instead of looping every second.
+ */
+export interface IdleLife {
+  /** Steps per breath, and how far the chest lifts on the in-breath (degrees of torso tilt). */
+  breath: number;
+  breathDepth: number;
+  /** Steps per weight shift (front foot → back foot → front), and how far the hips travel (px). */
+  sway: number;
+  swayDepth: number;
+  /** How much of the torso's tilt away from the stance the head cancels (1 = gaze dead level). */
+  steady: number;
+}
+
+const TAU = Math.PI * 2;
+
+/**
+ * Adds breathing, weight shift and a steady head to an idle pose, `t` steps into the idle.
+ * Display only: it moves the hips over planted feet and never changes the fighter's position.
+ */
+export function idleLife(out: Pose, A: AnimSet, t: number): void {
+  const L = A.life;
+  const fade = Math.min(1, t / 30);
+  // Breathing: in-breath quicker than out-breath (40 / 60), and the depth drifts so that
+  // consecutive breaths differ.
+  const ph = (t % L.breath) / L.breath;
+  const u = ph < 0.4 ? (ph / 0.4) * 0.5 : 0.5 + ((ph - 0.4) / 0.6) * 0.5;
+  const depth = L.breathDepth * (1 + 0.35 * Math.sin((TAU * t) / (L.breath * 2.7)));
+  const inhale = (0.5 - 0.5 * Math.cos(TAU * u)) * depth * fade;
+  out.lean -= inhale;
+  out.armF[0] += inhale * 0.5;
+  out.armB[0] += inhale * 0.5;
+  // Weight shift: the hips drift over the front foot, then the back foot (the feet stay planted).
+  // The loaded knee bends, so the hips sink a little as they travel; that also keeps the far leg
+  // from over-stretching and dragging its foot.
+  const sway = Math.sin((TAU * t) / L.sway) * L.swayDepth * fade;
+  out.bodyX += sway;
+  out.lift -= Math.abs(sway) * 0.6;
+  // Head: counter the torso's tilt so the eyes stay on the opponent.
+  out.head += (A.stance.lean - out.lean) * L.steady;
 }
 
 const K = (t: number, p: Pose, e?: Ease): Key => ({ t, p, e });
@@ -266,7 +311,8 @@ type PerCharacterClips =
   | 'intro'
   | 'victory'
   | 'step'
-  | 'turnFrames';
+  | 'turnFrames'
+  | 'life';
 
 /** Forward dash: crouched launch, one long extended stride, settle. */
 function dashClip(stance: Pose, upper: Partial<Pose>): Clip {
@@ -643,6 +689,9 @@ function buildKaen(): AnimSet {
     },
     step: { frames: 6, height: 13 },
     turnFrames: 7,
+    // Energetic: quick breaths over the bounce, weight rocking between the feet, head bobbing
+    // with the bounce but steadied by half.
+    life: { breath: 96, breathDepth: 1.6, sway: 170, swayDepth: 2.5, steady: 0.45 },
     ...sharedClips(stance, KAEN),
   };
 }
@@ -668,7 +717,8 @@ function buildYoru(): AnimSet {
 
   return {
     stance,
-    idle: { keys: [K(0, stance), K(30, breathe, 'io'), K(60, stance, 'io')], loopFrom: 0 },
+    // A slow settle of the hips (2.5 s), not a bob: Yoru stays composed.
+    idle: { keys: [K(0, stance), K(75, breathe, 'io'), K(150, stance, 'io')], loopFrom: 0 },
     // Glide: low and level, feet skimming the floor, the lead hand never moves.
     walk: gaitClip(stance, {
       stride: 100,
@@ -720,6 +770,8 @@ function buildYoru(): AnimSet {
     },
     step: { frames: 5, height: 8 },
     turnFrames: 5,
+    // Calm: slow, deep breaths, a barely-there weight shift, eyes level on the opponent.
+    life: { breath: 200, breathDepth: 1.8, sway: 330, swayDepth: 1.5, steady: 0.9 },
     ...sharedClips(stance, YORU),
   };
 }

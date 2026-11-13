@@ -218,7 +218,67 @@ The new animation tests cover:
   briefly edge-on and thin.
 - **Some fast rotations are deliberate.** The parry deflect snaps about 100° in one frame, and
   Yoru's crescent kick drops its leg at about 41° per frame. These were reviewed and kept.
-- **Hair and cloth were not retuned** (see section 3).
+- ~~**Hair and cloth were not retuned** (see section 3).~~ Done in the follow-up, section 8.
 - **Performance not yet tested on the target laptop.** It has not been checked on the Ryzen 3 /
   8 GB laptop. The added per-frame work is two small IK solves per fighter. No particles or new
   textures were added.
+
+## 8. Follow-up: idle life, hair and cloth
+
+**Branch:** `feature/phase1-polish` (from `main` at `3cfe37b`). This closes the two plan items the
+first pass left open: "idle breathing and weight shifting" and "improve hair and clothing motion".
+Display only: no frame data, damage, hitboxes, AI or menus changed.
+
+### Audit (measured in the real game in Chrome, both fighters standing still for 5 s)
+
+| Finding | Kaen | Yoru |
+|---|---|---|
+| Whole idle pose repeats exactly every | 35 steps (0.6 s) | 58 steps (1 s) |
+| Weight shift between the feet (hip travel) | 0 px | 0 px |
+| Gaze tilt (the head followed every torso bob) | 3.0° | 3.0° |
+| Paired tails in lockstep (correlation of tip motion; 1 = identical) | headband 1.00 | scarf 1.00 |
+| Tail flapping while standing still (tip up/down range) | 19 px | 25 px |
+
+The breeze was one fixed sine with a 0.5 s beat, identical for every tail, so the cloth flapped on a
+visible metronome while the fighter stood still, and it masked any real follow-through.
+
+### Changes
+
+- **Idle life** (`animations.ts`: `IdleLife`, `idleLife`; called from `PoseDriver`): layered on
+  top of each idle clip, with periods unrelated to the clip and to each other.
+  - Breathing: the chest lifts and the shoulders rise; the in-breath is quicker than the
+    out-breath, and the depth drifts so consecutive breaths differ.
+  - Weight shift: the hips drift over the front foot, then the back foot, sinking slightly as the
+    loaded knee bends. The feet stay planted, and the foot planter's IK bends the legs.
+  - Steady head: the head cancels part of the torso's tilt so the eyes stay on the opponent.
+  - Kaen (energetic): quick breaths (1.6 s) over his bounce, ±2.5 px weight rock, head steadied by
+    45 %. Yoru (calm): her hip settle slowed from 1 s to 2.5 s, slow deep breaths (3.3 s), ±1.5 px
+    weight shift, head steadied by 90 %.
+  - Driven by the animation's clip time, so it also plays in the menus, select and VS screens.
+- **Hair and cloth** (`Rope.ts`, `ropeSpecs.ts`):
+  - The breeze is two unrelated waves under a slowly gusting strength, at a slower beat (0.8 s).
+  - Every tail has its own phase in the breeze, so paired tails no longer move as one.
+  - Cloth flaps harder the faster its anchor moves (light breeze standing still, up to about
+    3× the standing flutter at running speed).
+  - The look is kept: the headband tails and the scarf still stream behind the fighter.
+
+### After
+
+| Measure | Kaen before → after | Yoru before → after |
+|---|---|---|
+| Idle pose repeats exactly every | 0.6 s → **not within 4 s** (tested) | 1 s → **not within 4 s** (tested) |
+| Weight shift (hip travel) | 0 → **5 px** | 0 → **3 px** |
+| Gaze tilt | 3.0° → **2.6°** (bobs with the bounce by design) | 3.0° → **0.4°** |
+| Paired tails correlation | 1.00 → **0.73** | 1.00 → **0.66** |
+| Tail flapping standing still | 19 → **10 px** | 25 → **10 px** |
+| Rope-tip jitter, idle (px/step²) | 0.131 → **0.067** | 0.244 → **0.036** |
+| Rope-tip jitter, walking (px/step²) | 0.567 → 0.575 | 0.332 → **0.214** |
+| Planted-foot slide over 10 s of idle (total) | 1.9 → **1.8 px**, almost all of it while the pose settles in the first 0.3 s, as before | not measured separately |
+| Planted feet after the first 0.5 s of idle | **< 0.1 px/step** (tested) | **< 0.1 px/step** (tested) |
+
+New tests in `tests/animation.test.ts` ("idle life and secondary motion", 5 tests):
+- standing still shifts weight between planted feet (≥ 2.5 px), the feet move < 0.1 px/step after
+  the first half-second, and the pose never repeats within 4 s (both fighters);
+- Yoru's gaze stays within 1°, Kaen's within 3°;
+- paired tails are not in lockstep (correlation < 0.9);
+- cloth flaps harder moving than standing still.

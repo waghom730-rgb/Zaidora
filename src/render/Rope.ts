@@ -13,7 +13,15 @@ export interface RopeOptions {
   rest: { x: number; y: number };
   /** Breeze strength. */
   flutter: number;
+  /** Offset into the breeze (steps), so neighbouring tails don't flutter in lockstep. */
+  phase?: number;
 }
+
+/** Breeze felt standing still, as a share of `flutter`; moving adds to it (see step). */
+const STILL_AIR = 0.55;
+/** Extra flutter per px/step the anchor moves, and the most it can reach. */
+const AIR_PER_PX = 0.12;
+const MAX_AIR = 1.6;
 
 interface Pt {
   x: number;
@@ -52,8 +60,15 @@ export class Rope {
     const ry = o.rest.y / this.restLen;
     const n = pts.length;
 
+    // Moving through the air makes cloth flap harder; standing still leaves a light breeze.
+    const air = Math.min(MAX_AIR, STILL_AIR + Math.hypot(ax - pts[0].x, ay - pts[0].y) * AIR_PER_PX);
     pts[0].x = pts[0].px = ax;
     pts[0].y = pts[0].py = ay;
+
+    // The breeze: two unrelated waves under a slowly gusting strength, so it never settles into
+    // a visible beat.
+    const t = clock + (o.phase ?? 0);
+    const gust = 0.7 + 0.3 * Math.sin(t * 0.019) * Math.sin(t * 0.047 + 1.1);
 
     for (let i = 1; i < n; i++) {
       const p = pts[i];
@@ -61,7 +76,7 @@ export class Rope {
       const vy = (p.y - p.py) * o.damping;
       p.px = p.x;
       p.py = p.y;
-      const wave = Math.sin(clock * 0.21 + i * 0.75) * o.flutter * (i / n);
+      const wave = (Math.sin(t * 0.13 + i * 0.75) * 0.75 + Math.sin(t * 0.071 - i * 0.5) * 0.25) * o.flutter * (i / n) * gust * air;
       p.x += vx - facing * o.flutter * 0.12 + wave * 0.35;
       p.y += vy + o.gravity + wave * 0.5;
       // Bias toward the rest shape.

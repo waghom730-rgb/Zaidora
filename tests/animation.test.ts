@@ -9,6 +9,9 @@ import { clipLength, getAnimSet, sampleClip } from '../src/render/animations';
 import { plantModes, selectClip } from '../src/render/clipSelect';
 import { NEUTRAL, clonePose } from '../src/render/poses';
 import { PoseDriver } from '../src/render/PoseDriver';
+import { Rope, type RopeOptions } from '../src/render/Rope';
+import { ropeSpecs } from '../src/render/ropeSpecs';
+import { FIGHTERS } from '../src/entities/fighterDefs';
 import { FOOT_CLEARANCE, FootPlanter, hipHeight, legFK, legIK, toRoot, wrapTurn } from '../src/render/skeleton';
 import { IDS, STRIKE_LIMB, cycle, hover, jumpJolts, play, samples, slip, standingSlide, strikeSync, strikeTip } from './animMetrics';
 import { Sim, input } from './sim';
@@ -299,6 +302,89 @@ describe('in play', () => {
       for (let t = 0; t < 1200; t++) w.step(pick(), pick());
       for (const d of w.drivers) d.snap();
       expect(w.drivers.every((d) => Number.isFinite(d.hip.y))).toBe(true);
+    }
+  });
+});
+
+describe('idle life and secondary motion', () => {
+  /** Plays `steps` of standing still and returns each step's drawn hips, torso and head. */
+  const standStill = (me: 'kaen' | 'yoru', steps: number) => {
+    const w = new Watched(new Sim(me, me === 'kaen' ? 'yoru' : 'kaen', 360, 760));
+    const d = w.drivers[0];
+    const rows: Array<{ hipX: number; lean: number; head: number; arm: number }> = [];
+    for (let t = 0; t < steps; t++) {
+      w.step();
+      rows.push({ hipX: d.hip.x, lean: d.pose.lean, head: d.pose.head, arm: d.pose.armF[0] });
+    }
+    return { w, rows: rows.slice(60) };
+  };
+  const span = (xs: number[]) => Math.max(...xs) - Math.min(...xs);
+
+  for (const me of IDS) {
+    it(`${me}: standing still shifts weight between planted feet and doesn't loop every second`, () => {
+      const { w, rows } = standStill(me, 600);
+      expect(w.states[0].every((s) => s.startsWith('idle')), 'stays idle').toBe(true);
+      // After the first half-second (the pose settling in from the round start), the feet don't move.
+      const fr = w.feet[0].slice(30);
+      let slide = 0;
+      for (let t = 1; t < fr.length; t++) for (const k of [0, 1]) slide = Math.max(slide, Math.abs(fr[t].x[k] - fr[t - 1].x[k]));
+      expect(slide, 'planted feet stay put (px/step)').toBeLessThan(0.1);
+      expect(span(rows.map((r) => r.hipX)), 'hips travel between the feet (px)').toBeGreaterThanOrEqual(2.5);
+      // No lag up to 4 s brings the whole pose back to where it was (the old idles repeated
+      // exactly every 36 and 60 steps).
+      let closest = Infinity;
+      for (let lag = 10; lag <= 240; lag++) {
+        let worst = 0;
+        for (let t = 0; t + lag < rows.length; t++) {
+          const a = rows[t];
+          const b = rows[t + lag];
+          worst = Math.max(worst, Math.abs(a.hipX - b.hipX), Math.abs(a.lean - b.lean), Math.abs(a.head - b.head), Math.abs(a.arm - b.arm));
+        }
+        closest = Math.min(closest, worst);
+      }
+      expect(closest, 'idle pose never repeats within 4 s').toBeGreaterThan(0.3);
+    });
+  }
+
+  it('yoru keeps her eyes level while she breathes; kaen bobs, steadied by half', () => {
+    const gaze = (me: 'kaen' | 'yoru') => span(standStill(me, 600).rows.map((r) => r.lean + r.head));
+    expect(gaze('yoru')).toBeLessThan(1);
+    expect(gaze('kaen')).toBeLessThan(3);
+  });
+
+  /** A rope's tip height per step after it settles; the anchor moves `speed` px/step. */
+  const tipTrace = (opts: RopeOptions, speed: number, steps = 600): number[] => {
+    const rope = new Rope(opts);
+    rope.reset(0, 300, 1);
+    const ys: number[] = [];
+    for (let t = 0; t < steps; t++) {
+      rope.step(t * speed, 300, 1, t);
+      if (t >= 120) ys.push(rope.pts[rope.pts.length - 1].y);
+    }
+    return ys;
+  };
+
+  it('paired tails flutter independently, not in lockstep', () => {
+    for (const id of IDS) {
+      const [a, b] = ropeSpecs(FIGHTERS[id]);
+      const ya = tipTrace(a.opts, 0);
+      const yb = tipTrace(b.opts, 0);
+      const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+      const [ma, mb] = [mean(ya), mean(yb)];
+      let sab = 0, saa = 0, sbb = 0;
+      ya.forEach((y, i) => {
+        sab += (y - ma) * (yb[i] - mb);
+        saa += (y - ma) ** 2;
+        sbb += (yb[i] - mb) ** 2;
+      });
+      expect(sab / Math.sqrt(saa * sbb), `${id}: tip correlation`).toBeLessThan(0.9);
+    }
+  });
+
+  it('cloth flaps harder on the move than standing still', () => {
+    for (const id of IDS) {
+      const tail = ropeSpecs(FIGHTERS[id])[0].opts;
+      expect(span(tipTrace(tail, 6)), `${id}`).toBeGreaterThan(span(tipTrace(tail, 0)) * 1.3);
     }
   });
 });

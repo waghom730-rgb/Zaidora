@@ -2,7 +2,7 @@
 // state, cross-fades into it, applies foot planting / hip smoothing / turn-arounds, and solves
 // the skeleton. FighterRig draws the result; the tests run the very same code headless.
 import type { Fighter } from '../entities/Fighter';
-import { sampleClip, type AnimSet } from './animations';
+import { idleLife, sampleClip, type AnimSet } from './animations';
 import { adjustPose, plantModes, selectClip } from './clipSelect';
 import { NEUTRAL, clonePose, copyPose, mixPose, type Pose } from './poses';
 import { FootPlanter, HipSmoother, hipHeight, joints, turnScale, wrapTurn, type Joints, type Leg, type V } from './skeleton';
@@ -92,6 +92,8 @@ export class PoseDriver {
     sampleClip(sel.clip, sel.time ?? this.clipTime, this.target);
     const w = this.blendLen <= 0 ? 1 : Math.min(1, this.blendTime / this.blendLen);
     mixPose(this.pose, this.from, this.target, 1 - (1 - w) * (1 - w));
+    // Clip time, not the fighter's state time: menus animate fighters that never update.
+    if (this.clipKey === 'idle') idleLife(this.pose, this.anims, this.clipTime);
     adjustPose(f, this.pose);
   }
 
