@@ -133,7 +133,8 @@ export class ResultScene extends Phaser.Scene {
     audio.unlock();
     if (this.leaving || !this.saved) return;
     const { difficulty, player, mode } = this.result;
-    if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyJ') this.leave('FightScene', { difficulty, player, mode });
+    // A versus rematch goes straight back in; every ladder fight is a new stage, so it gets its VS screen.
+    if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyJ') this.leave(mode === 'ladder' ? 'VersusScene' : 'FightScene', { difficulty, player, mode });
     else if (e.code === 'KeyC') this.leave('CharacterSelectScene', { difficulty, player, mode });
     else if (e.code === 'KeyD') this.leave('DojoScene', { back: 'MenuScene' });
     else if (e.code === 'Escape') this.leave('MenuScene', {});

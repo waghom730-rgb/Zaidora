@@ -26,7 +26,10 @@ export async function run(browser, url) {
   const first = await probe();
   const heap = [first.heapMB];
   let last = first;
+  const vsShown = () => page.evaluate(() => window.game.scene.getScene('VersusScene').shown);
+  let vsOk = true;
   for (let i = 2; i <= 7; i++) {
+    const vsBefore = await vsShown();
     await page.evaluate(() => {
       const s = window.game.scene.getScene('FightScene');
       s.energy.add(s.p1, 100);
@@ -50,9 +53,12 @@ export async function run(browser, url) {
       await tap(page, 'Enter');
     }
     await waitForFight(page);
+    // Change fighter goes through the VS screen; a rematch skips it.
+    if ((await vsShown()) - vsBefore !== (i % 2 ? 1 : 0)) vsOk = false;
     last = await probe();
     heap.push(last.heapMB);
   }
+  t.check('VS screen on change of fighter, skipped on rematch', vsOk);
   t.check('No duplicate scene key listeners after 6 rematches', last.sceneKeydown === first.sceneKeydown, `${first.sceneKeydown} → ${last.sceneKeydown}`);
   t.check('No accumulating per-key listeners', last.keyListeners === first.keyListeners, `${first.keyListeners} → ${last.keyListeners}`);
   t.check('No leftover projectiles in a new match', last.projectiles === 0);

@@ -71,6 +71,13 @@ const ZOOM = 1.2;
 const MAX_SEPARATION = GAME_WIDTH / ZOOM - 150;
 /** Length of the round-1 character intros before "ROUND 1" is called. */
 const INTRO_FRAMES = 96;
+/**
+ * Round start, in frames after the intros: ROUND N, then 3-2-1 on a steady half-second beat,
+ * then FIGHT! — control is handed over a few frames later, as the banner lands.
+ */
+const COUNT_AT = [56, 86, 116] as const;
+const FIGHT_AT = 146;
+const LIVE_AT = FIGHT_AT + 10;
 
 const specialCost = (f: Fighter): number => MOVES[f.def.special].special?.energyCost ?? Infinity;
 
@@ -370,6 +377,7 @@ export class FightScene extends Phaser.Scene {
           // Readable tell: a short aura flare and power-up sound during startup.
           audio.play('powerup');
           this.fx.aura(f.x, GROUND_Y, f.def.fx, 10);
+          this.hud.portraitShout(f === this.p1 ? 0 : 1);
           break;
         case 'projectile':
           this.combat.spawnProjectile(f);
@@ -457,16 +465,22 @@ export class FightScene extends Phaser.Scene {
             }
           }
         }
-        if (t === offset + 1) {
+        const c = t - offset;
+        if (c === 1) {
           const final = this.wins[0] === ROUNDS_TO_WIN - 1 && this.wins[1] === ROUNDS_TO_WIN - 1;
-          this.hud.announce(final ? 'FINAL ROUND' : `ROUND ${this.round}`, { size: final ? 96 : 110, hold: 650 });
+          this.hud.announce(final ? 'FINAL ROUND' : `ROUND ${this.round}`, { size: final ? 96 : 110, hold: 450 });
           audio.play('round');
         }
-        if (t === offset + 80) {
+        const beat = COUNT_AT.indexOf(c as (typeof COUNT_AT)[number]);
+        if (beat >= 0) {
+          this.hud.announce(String(COUNT_AT.length - beat), { size: 150, hold: 180 });
+          audio.play('count');
+        }
+        if (c === FIGHT_AT) {
           this.hud.announce('FIGHT!', { color: '#ffd23f', size: 140, hold: 350 });
           audio.play('fight');
         }
-        if (t >= offset + 92) {
+        if (c >= LIVE_AT) {
           this.phase = 'fight';
           this.phaseTimer = 0;
           for (const f of [this.p1, this.p2]) if (f.state === 'intro') f.setState('idle');
@@ -486,6 +500,7 @@ export class FightScene extends Phaser.Scene {
         if (w && this.winnerPosedAt < 0 && t > 50 && w.isActionable()) {
           w.celebrate();
           this.winnerPosedAt = t;
+          this.hud.portraitShout(w === this.p1 ? 0 : 1);
         }
         if (w && this.winnerPosedAt > 0 && t === this.winnerPosedAt + 16) {
           this.fx.aura(w.x, GROUND_Y, w.def.fx, 22);
@@ -527,6 +542,8 @@ export class FightScene extends Phaser.Scene {
       this.wins[1]++;
     }
     this.hud.setWins(this.wins[0], this.wins[1]);
+    if (this.roundLoser) this.hud.portraitDefeat(this.roundLoser === p1 ? 0 : 1);
+    else if (reason === 'ko') [0, 1].forEach((i) => this.hud.portraitDefeat(i as 0 | 1));
 
     if (reason === 'ko') {
       this.slowMo = 45;

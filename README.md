@@ -7,8 +7,9 @@ repository is the early prototype of that game.
 A playable 1v1 browser fighting game: two original, fully animated fighters, one arena,
 movement (walk, dash, run, evade), jumping (with flips), punches, kicks, heavy attacks,
 blocking, parries and counter hits, chain combos, knockdowns,
-health bars, a round timer, best-of-3 rounds, character select, a CPU opponent with three
-difficulty levels, and victory/defeat screens.
+health bars with fighter portraits, a round timer, best-of-3 rounds with a 3-2-1 countdown,
+character select, a VS screen, a CPU opponent with three difficulty levels, and victory/defeat
+screens.
 
 | Fighter | Look | Style |
 | ------- | ---- | ----- |
@@ -175,6 +176,7 @@ src/
 │   ├── BootScene.ts         Generates textures, then opens the menu
 │   ├── MenuScene.ts         Title, difficulty select, controls
 │   ├── CharacterSelectScene.ts  Pick Kaen or Yoru (CPU takes the other)
+│   ├── VersusScene.ts       Pre-fight VS screen (skippable; rematches skip it)
 │   ├── FightScene.ts        Fixed-step loop, rounds, intros, hitstop, KO camera, pause, debug
 │   ├── ResultScene.ts       Victory / defeat, stats, rematch / change fighter
 │   └── showcase.ts          Animated characters on menu screens
@@ -202,7 +204,7 @@ src/
 │   └── Rope.ts              Verlet rope for hair and cloth
 ├── arena/Arena.ts           Sunset dojo background, lantern glow, cherry petals
 ├── effects/Effects.ts       Hit sparks, fire / shadow styles, block flashes, dust, auras
-└── ui/                      HUD, health bars, text styles
+└── ui/                      HUD (portraits, countdown banner), health bars, text styles
 tests/
 ├── sim.ts                   Headless match simulation (same step order as FightScene)
 ├── combat.test.ts           Chains, no-infinite checks, heavies, parry, dash / run / evade
@@ -222,12 +224,13 @@ Easy in at least 75% of rounds).
 `npm run test:browser` plays the real game in headless Chrome (needs Google Chrome installed;
 set `CHROME_PATH` to use another Chromium). It starts its own dev server and checks:
 
-- **flow** — real key presses through menu → character select → fight (combo, heavy, dash,
-  evade, time-over, KO rounds) → results → change fighter → menu.
+- **flow** — real key presses through menu → character select → VS screen → 3-2-1 countdown
+  (no movement before FIGHT!) → fight (combo, heavy, dash, evade, time-over, KO rounds, HUD
+  portraits) → results → change fighter → VS screen → Esc back → menu.
 - **specials** — energy costs and refusal, energy gains, Fireball (single hit, block, jump,
   cleanup, special cancel, punishable) and Shadow Dash (hit, block, travel distance).
 - **stability** — seven matches in a row without leaking listeners, projectiles, objects or
-  textures; pause and timer; focus loss; double-KO and equal-health draws.
+  textures (change fighter shows the VS screen, rematch skips it); pause and timer; focus loss; double-KO and equal-health draws.
 
 Run one suite with e.g. `npm run test:browser -- specials`, or point at a running server with
 `BASE_URL=http://localhost:5173 npm run test:browser`.
@@ -240,5 +243,5 @@ Run one suite with e.g. `npm run test:browser -- specials`, or point at a runnin
    more specials per discipline
 4. **Enemy intelligence** — ~~reaction jitter, evades, dash-ins, heavy punishes, fireball
    parries~~ ✅, spacing, reading the player's patterns
-5. **Complete game** — ~~character select~~ ✅, ~~character art & animation~~ ✅, more fighters,
+5. **Complete game** — ~~character select~~ ✅, ~~VS screen, countdown, HUD portraits~~ ✅, ~~character art & animation~~ ✅, more fighters,
    more arenas, story mode, music, progression

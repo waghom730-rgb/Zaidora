@@ -35,6 +35,8 @@ export interface FighterDef {
   style: string;
   /** Short lines shown on the character select screen. */
   blurb: string[];
+  /** Intro line on the VS screen (from the design bible). */
+  vsLine: string;
   /** CSS color for names in the UI. */
   uiColor: string;
   fx: FxStyle;
@@ -54,6 +56,7 @@ export const KAEN: FighterDef = {
   name: 'KAEN',
   style: 'Blazing Fist',
   blurb: ['Hot-blooded street brawler', 'Relentless pressure, crimson flames', 'Fists wrapped, never backs down'],
+  vsLine: 'Feel the heat!',
   uiColor: '#ffb27a',
   fx: 'fire',
   heavy: 'flameStrike',
@@ -85,6 +88,7 @@ export const YORU: FighterDef = {
   name: 'YORU',
   style: 'Silent Shadow',
   blurb: ['Masked shadow-arts master', 'Calm, precise, punishes mistakes', 'Strikes from the dark'],
+  vsLine: "You won't see the strike.",
   uiColor: '#c3b0ff',
   fx: 'shadow',
   heavy: 'shadowSlash',

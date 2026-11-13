@@ -195,7 +195,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.time.delayedCall(1300, () => {
       this.cameras.main.fadeOut(350, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-        this.scene.start('FightScene', { difficulty: this.difficulty, player: s.id, mode: this.mode });
+        this.scene.start('VersusScene', { difficulty: this.difficulty, player: s.id, mode: this.mode });
       });
     });
   }

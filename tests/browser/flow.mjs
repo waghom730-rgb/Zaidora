@@ -12,6 +12,30 @@ export async function run(browser, url) {
 
   await tap(page, 'd', 150);
   await tap(page, 'Enter');
+  await page.waitForFunction(() => window.game.scene.isActive('VersusScene'), null, { timeout: 30000 });
+  const vs = await page.evaluate(() => window.game.scene.getScene('VersusScene').names);
+  t.check('VS screen introduces Yoru vs Kaen', vs.join() === 'YORU,KAEN', vs.join(' vs '));
+
+  // The VS screen hands over on its own; then the round counts down. D is held the whole
+  // time: the player must not move before FIGHT!.
+  await page.waitForFunction(() => window.game.scene.isActive('FightScene'), null, { timeout: 30000 });
+  const x0 = await page.evaluate(() => window.game.scene.getScene('FightScene').p1.x);
+  await page.keyboard.down('d');
+  const banners = [];
+  let movedEarly = false;
+  for (let i = 0; i < 800; i++) {
+    const c = await page.evaluate(() => {
+      const f = window.game.scene.getScene('FightScene');
+      return { phase: f.phase, banner: f.hud.banner.text, x: f.p1.x };
+    });
+    if (c.banner && banners[banners.length - 1] !== c.banner) banners.push(c.banner);
+    if (c.phase === 'fight') break;
+    if (c.x !== x0) movedEarly = true;
+    await wait(page, 25);
+  }
+  await page.keyboard.up('d');
+  t.check('Round start counts down ROUND 1 → 3 → 2 → 1 → FIGHT!', banners.join() === 'ROUND 1,3,2,1,FIGHT!', banners.join(' → '));
+  t.check('No movement before FIGHT! (D held through the countdown)', !movedEarly);
   await waitForFight(page);
   await installHooks(page);
   let s = await fightState(page);
@@ -70,10 +94,17 @@ export async function run(browser, url) {
   await wait(page, 1800);
   s = await fightState(page);
   t.check('Time-over: loser slumps, winner celebrates, CPU gets the round', s.p1 === 'lose' && s.p2 === 'victory' && s.wins.join() === '0,1', `${s.p1}/${s.p2} ${s.wins}`);
+  const faces = () => page.evaluate(() => window.game.scene.getScene('FightScene').hud.portraits.map((p) => ({ e: p.expression, d: p.defeated })));
+  let pf = await faces();
+  t.check('HUD portrait greys out for the round loser only', pf[0].d && !pf[1].d, JSON.stringify(pf));
 
   // Rounds 2 and 3 by KO.
   for (const round of [2, 3]) {
     await waitForFight(page, round);
+    if (round === 2) {
+      pf = await faces();
+      t.check('Portraits reset at the next round', pf.every((p) => !p.d && p.e === 'normal'), JSON.stringify(pf));
+    }
     await place(page, 600, 710);
     await page.evaluate(() => {
       window.game.scene.getScene('FightScene').p2.hp = 4;
@@ -81,6 +112,10 @@ export async function run(browser, url) {
     await wait(page, 80);
     await tap(page, 'j');
     await page.waitForFunction(() => window.game.scene.getScene('FightScene').phase !== 'fight', null, { timeout: 8000 });
+    if (round === 2) {
+      pf = await faces();
+      t.check('A real KO hit: the CPU portrait shows the hurt face, greyed out', pf[1].d && pf[1].e === 'hurt' && !pf[0].d, JSON.stringify(pf));
+    }
   }
   s = await fightState(page);
   t.check('Two KOs win the match 2–1', s.wins.join() === '2,1', String(s.wins));
@@ -92,6 +127,13 @@ export async function run(browser, url) {
   await tap(page, 'c', 900);
   const sel = await page.evaluate(() => window.game.scene.getScene('CharacterSelectScene')?.selected);
   t.check('C → character select with Yoru still chosen', (await activeScenes(page)).includes('CharacterSelectScene') && sel === 1);
+
+  await tap(page, 'Enter');
+  await page.waitForFunction(() => window.game.scene.isActive('VersusScene'), null, { timeout: 30000 });
+  await wait(page, 600);
+  await tap(page, 'Escape', 900);
+  const back = await page.evaluate(() => window.game.scene.getScene('CharacterSelectScene')?.selected);
+  t.check('Esc on the VS screen → back to character select, Yoru still chosen', (await activeScenes(page)).includes('CharacterSelectScene') && back === 1);
 
   await tap(page, 'Escape', 800);
   t.check('Esc → main menu', (await activeScenes(page)).includes('MenuScene'));

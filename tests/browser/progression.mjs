@@ -40,6 +40,9 @@ export async function run(browser, url, server) {
   t.check('Rewards are shown and kept (coins + XP)', s.coins > 0 && s.xp > 0 && /\+\d+ coins/.test(rewards), rewards.split('\n')[0]);
 
   await tap(page, 'Enter'); // next stage
+  await page.waitForFunction(() => window.game.scene.isActive('VersusScene'), null, { timeout: 30000 });
+  const vsLine = await page.evaluate(() => window.game.scene.getScene('VersusScene').line);
+  t.check('Next ladder stage is introduced on the VS screen', vsLine.includes('STAGE 2/'), vsLine);
   await waitForFight(page);
   rewards = await forceMatch(page, 'lose');
   s = await save(page);

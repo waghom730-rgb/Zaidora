@@ -10,6 +10,7 @@ export type Sfx =
   | 'select'
   | 'confirm'
   | 'round'
+  | 'count'
   | 'fight'
   | 'powerup'
   | 'fireball'
@@ -108,6 +109,11 @@ class AudioManager {
       case 'round':
         this.tone('triangle', 880, 880, 0.45, 0.18, t);
         this.tone('triangle', 1320, 1320, 0.45, 0.1, t + 0.05);
+        break;
+      case 'count':
+        // Countdown beat: a short, bright tick (lower than the ROUND chime).
+        this.tone('triangle', 660, 660, 0.12, 0.16, t);
+        this.noiseBurst('bandpass', 1800, 1800, 2, 0.05, 0.08, t);
         break;
       case 'fight':
         this.tone('sawtooth', 330, 660, 0.25, 0.12, t);

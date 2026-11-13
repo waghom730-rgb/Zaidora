@@ -9,6 +9,7 @@ import { FightScene } from './scenes/FightScene';
 import { MenuScene } from './scenes/MenuScene';
 import { ProfileScene } from './scenes/ProfileScene';
 import { ResultScene } from './scenes/ResultScene';
+import { VersusScene } from './scenes/VersusScene';
 import { profile } from './services/profile';
 
 const game = new Phaser.Game({
@@ -30,7 +31,7 @@ const game = new Phaser.Game({
   fps: { target: 60 },
   // Sound is synthesized by our own AudioManager; Phaser's audio system isn't needed yet.
   audio: { noAudio: true },
-  scene: [BootScene, AccountScene, MenuScene, CharacterSelectScene, FightScene, ResultScene, DojoScene, ProfileScene],
+  scene: [BootScene, AccountScene, MenuScene, CharacterSelectScene, VersusScene, FightScene, ResultScene, DojoScene, ProfileScene],
 });
 
 if (import.meta.env.DEV) {
