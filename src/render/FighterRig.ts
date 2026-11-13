@@ -1,28 +1,18 @@
 import Phaser from 'phaser';
 import type { Fighter } from '../entities/Fighter';
-import type { FighterDef } from '../entities/fighterDefs';
 import { ART_RES, headKey, partKey, partOrigin, type Expression, type PartId } from './CharacterArt';
-import { clipLength, getAnimSet, sampleClip, type AnimSet, type Clip } from './animations';
-import { NEUTRAL, clonePose, copyPose, mixPose, type Pose } from './poses';
+import { getAnimSet } from './animations';
+import { PoseDriver } from './PoseDriver';
 import { Rope, type RopeOptions } from './Rope';
+import { ropeSpecs, type RopeSpec } from './ropeSpecs';
+import { add, rot, type V } from './skeleton';
 
 const DEG = Math.PI / 180;
-/** Bone lengths — attack hitboxes in moves.ts are tuned to these. */
-const SEG = { thigh: 46, shin: 46, torso: 58, upper: 34, fore: 32 } as const;
-const AIR_HIP = 92;
-const FOOT_CLEARANCE = 6;
 const BACK_TINT = 0xa49cb8;
 /** Multiplier applied to everything when a character is shown "unselected". */
 const DIM_TINT = 0x5a5470;
 const INK = 0x150e1a;
 const OUT = 2;
-
-type V = { x: number; y: number };
-const add = (a: V, b: V): V => ({ x: a.x + b.x, y: a.y + b.y });
-const mul = (a: V, s: number): V => ({ x: a.x * s, y: a.y * s });
-const rot = (v: V, r: number): V => ({ x: v.x * Math.cos(r) - v.y * Math.sin(r), y: v.x * Math.sin(r) + v.y * Math.cos(r) });
-const wrap180 = (a: number): number => ((((a + 180) % 360) + 360) % 360) - 180;
-const mod = (a: number, n: number): number => ((a % n) + n) % n;
 
 type PartName = 'upperB' | 'foreB' | 'shinB' | 'thighB' | 'shinF' | 'thighF' | 'torso' | 'head' | 'upperF' | 'foreF';
 /** Back-to-front draw order. */
@@ -39,104 +29,10 @@ const TEXTURE: Record<Exclude<PartName, 'head'>, PartId> = {
   foreF: 'fore',
 };
 
-interface RopeSpec {
-  space: 'head' | 'torso';
-  anchor: V;
-  front: boolean;
-  w0: number;
-  w1: number;
-  color: number;
-  opts: RopeOptions;
-}
-
-const css = (c: string): number => parseInt(c.replace('#', ''), 16);
-
 /** Per-channel multiply of two 0xRRGGBB colors. */
 function multiply(a: number, b: number): number {
   const ch = (shift: number) => Math.round((((a >> shift) & 255) * ((b >> shift) & 255)) / 255);
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
-}
-
-function ropeSpecs(def: FighterDef): RopeSpec[] {
-  const L = def.look;
-  if (def.id === 'kaen') {
-    const band = css(L.accent);
-    const belt = css(L.belt);
-    const tail = (length: number, droop: number): RopeOptions => ({
-      segments: 5,
-      length,
-      gravity: 0.16,
-      damping: 0.9,
-      stiffness: 0.07,
-      rest: { x: -1, y: droop },
-      flutter: 0.9,
-    });
-    const beltTail = (length: number, x: number): RopeOptions => ({
-      segments: 3,
-      length,
-      gravity: 0.5,
-      damping: 0.85,
-      stiffness: 0.12,
-      rest: { x, y: 1 },
-      flutter: 0.15,
-    });
-    return [
-      { space: 'head', anchor: { x: -16, y: -41 }, front: false, w0: 5, w1: 2.5, color: band, opts: tail(36, 0.25) },
-      { space: 'head', anchor: { x: -16, y: -40 }, front: false, w0: 5, w1: 2.5, color: band, opts: tail(28, 0.6) },
-      { space: 'torso', anchor: { x: 15, y: 2 }, front: true, w0: 5, w1: 4, color: belt, opts: beltTail(20, 0.15) },
-      { space: 'torso', anchor: { x: 14, y: 2 }, front: true, w0: 5, w1: 4, color: belt, opts: beltTail(15, -0.1) },
-    ];
-  }
-  const hair = css(L.hair[1]);
-  const scarf = css(L.accent);
-  const sash = css(L.belt);
-  const scarfTail = (length: number, droop: number): RopeOptions => ({
-    segments: 8,
-    length,
-    gravity: 0.2,
-    damping: 0.92,
-    stiffness: 0.035,
-    rest: { x: -1, y: droop },
-    flutter: 1.3,
-  });
-  return [
-    {
-      space: 'torso',
-      anchor: { x: -11, y: -62 },
-      front: false,
-      w0: 10,
-      w1: 6,
-      color: scarf,
-      opts: scarfTail(74, 0.3),
-    },
-    {
-      space: 'torso',
-      anchor: { x: -11, y: -60 },
-      front: false,
-      w0: 9,
-      w1: 5,
-      color: scarf,
-      opts: scarfTail(58, 0.55),
-    },
-    {
-      space: 'head',
-      anchor: { x: -17, y: -36 },
-      front: false,
-      w0: 13,
-      w1: 2,
-      color: hair,
-      opts: { segments: 7, length: 50, gravity: 0.45, damping: 0.9, stiffness: 0.06, rest: { x: -0.75, y: 0.7 }, flutter: 0.7 },
-    },
-    {
-      space: 'torso',
-      anchor: { x: 15, y: 2 },
-      front: true,
-      w0: 6,
-      w1: 4,
-      color: sash,
-      opts: { segments: 3, length: 22, gravity: 0.5, damping: 0.85, stiffness: 0.12, rest: { x: 0.15, y: 1 }, flutter: 0.2 },
-    },
-  ];
 }
 
 interface RopeSlot extends RopeSpec {
@@ -177,21 +73,13 @@ export class FighterRig {
   private readonly frontG: Phaser.GameObjects.Graphics;
   private readonly trailG: Phaser.GameObjects.Graphics;
   private readonly ropes: RopeSlot[];
-  private readonly anims: AnimSet;
+  /** Clip selection, blending, foot planting and the solved skeleton (pure; see PoseDriver). */
+  private readonly drive: PoseDriver;
   /** Texture key prefix: the fighter id, or id@outfit for alternate looks. */
   private readonly art: string;
   private readonly ghosts: Ghost[] = [];
   private ghostIndex = 0;
 
-  private readonly pose: Pose = clonePose(NEUTRAL);
-  private readonly from: Pose = clonePose(NEUTRAL);
-  private readonly target: Pose = clonePose(NEUTRAL);
-  private clipKey = '';
-  private clipTime = 0;
-  private blendTime = 0;
-  private blendLen = 1;
-  private walkDist = 0;
-  private runDist = 0;
   private clock = 0;
   private expression: Expression = 'normal';
   private flashing = false;
@@ -220,7 +108,7 @@ export class FighterRig {
     this.scene = scene;
     this.layer = opts.layer;
     this.scale = opts.scale ?? 1;
-    this.anims = getAnimSet(f.def.id);
+    this.drive = new PoseDriver(f, getAnimSet(f.def.id), this.scale);
     this.art = f.def.artKey ?? f.def.id;
 
     this.backG = this.track(scene.add.graphics());
@@ -283,9 +171,7 @@ export class FighterRig {
 
   /** Jump straight to the current state's pose and re-seat hair/cloth (round start, teleports). */
   snap(): void {
-    this.clipKey = '';
-    this.tick();
-    copyPose(this.pose, this.target);
+    this.drive.snap();
     this.apply();
     this.ropesReady = false;
     this.stepRopes();
@@ -296,26 +182,7 @@ export class FighterRig {
 
   tick(): void {
     this.clock++;
-    const f = this.f;
-    if (f.state === 'walk') this.walkDist += f.vx * f.facing;
-    if (f.state === 'run') this.runDist += Math.abs(f.vx);
-
-    const sel = this.selectClip();
-    if (sel.key !== this.clipKey) {
-      copyPose(this.from, this.pose);
-      this.from.rootRot = wrap180(this.from.rootRot);
-      this.clipKey = sel.key;
-      this.clipTime = 0;
-      this.blendTime = 0;
-      this.blendLen = sel.blend;
-    } else {
-      this.clipTime++;
-    }
-    this.blendTime++;
-    sampleClip(sel.clip, sel.time ?? this.clipTime, this.target);
-    const w = this.blendLen <= 0 ? 1 : Math.min(1, this.blendTime / this.blendLen);
-    mixPose(this.pose, this.from, this.target, 1 - (1 - w) * (1 - w));
-
+    this.drive.tick();
     this.expression = this.pickExpression();
     this.apply();
     this.stepRopes();
@@ -323,64 +190,8 @@ export class FighterRig {
     this.maybeGhost();
   }
 
-  private selectClip(): { key: string; clip: Clip; time?: number; blend: number } {
-    const f = this.f;
-    const A = this.anims;
-    switch (f.state) {
-      case 'intro':
-        return { key: 'intro', clip: A.intro, blend: 0 };
-      case 'idle':
-        return { key: 'idle', clip: A.idle, blend: 6 };
-      case 'walk': {
-        const len = clipLength(A.walk);
-        return { key: 'walk', clip: A.walk, time: mod((this.walkDist / A.stride) * len, len), blend: 5 };
-      }
-      case 'run': {
-        const len = clipLength(A.run);
-        return { key: 'run', clip: A.run, time: mod((this.runDist / A.runStride) * len, len), blend: 4 };
-      }
-      case 'dash':
-        return { key: 'dash', clip: A.dash, blend: 2 };
-      case 'backdash':
-        return { key: 'backdash', clip: A.backdash, blend: 1 };
-      case 'parry':
-        return { key: `parry${f.hitSerial}`, clip: A.parry, blend: 1 };
-      case 'parried':
-        return { key: 'parried', clip: A.parried, blend: 1 };
-      case 'prejump':
-        return { key: 'prejump', clip: A.prejump, blend: 2 };
-      case 'air':
-        if (f.jumpDir === 0) return { key: 'airN', clip: A.airNeutral, blend: 3 };
-        return { key: f.jumpDir > 0 ? 'airF' : 'airB', clip: f.jumpDir > 0 ? A.airFlipF : A.airFlipB, blend: 3 };
-      case 'land':
-        return { key: 'land', clip: A.land, blend: 1 };
-      case 'block':
-        return { key: 'block', clip: A.block, blend: 3 };
-      case 'blockstun':
-        return { key: `blockstun${f.hitSerial}`, clip: A.blockstun, blend: 1 };
-      case 'hitstun':
-        return {
-          key: `hit${f.hitSerial}`,
-          clip: f.lastHitHeavy ? A.hitHeavy : f.lastHitHigh ? A.hitHigh : A.hitBody,
-          blend: 0,
-        };
-      case 'knockdown':
-        return { key: 'knockdown', clip: A.knockdown, blend: 1 };
-      case 'down':
-      case 'ko':
-        return { key: 'down', clip: A.down, blend: 1 };
-      case 'getup':
-        return { key: 'getup', clip: A.getup, blend: 2 };
-      case 'victory':
-        return { key: 'victory', clip: A.victory, blend: 6 };
-      case 'lose':
-        return { key: 'lose', clip: A.lose, blend: 6 };
-      case 'attack': {
-        const m = f.move;
-        if (!m) return { key: 'idle', clip: A.idle, blend: 4 };
-        return { key: `atk${f.moveSerial}`, clip: A.attacks[m.id], time: f.moveFrame, blend: 2 };
-      }
-    }
+  private get clipTime(): number {
+    return this.drive.clipTime;
   }
 
   private pickExpression(): Expression {
@@ -418,66 +229,43 @@ export class FighterRig {
     this.parts[name].setPosition(pos.x, pos.y).setRotation(deg * DEG);
   }
 
-  /** Forward kinematics: pose -> part transforms (all in facing-right local space). */
+  /** Places the painted parts on the solved skeleton (all in facing-right local space). */
   private apply(): void {
     const f = this.f;
-    const p = this.pose;
-    const dir = (a: number): V => ({ x: Math.sin(a * DEG), y: Math.cos(a * DEG) });
+    const d = this.drive;
+    const p = d.pose;
+    this.hipLocal = d.hip;
+    this.body.setPosition(d.hip.x, d.hip.y).setRotation(p.rootRot * DEG);
 
-    const kneeF = mul(dir(p.legF[0]), SEG.thigh);
-    const ankF = add(kneeF, mul(dir(p.legF[0] + p.legF[1]), SEG.shin));
-    const kneeB = mul(dir(p.legB[0]), SEG.thigh);
-    const ankB = add(kneeB, mul(dir(p.legB[0] + p.legB[1]), SEG.shin));
-
-    // Grounded: plant the lowest foot on the floor. Airborne: fixed hip height.
-    const grounded = f.grounded && f.state !== 'knockdown';
-    const auto = grounded ? -(Math.max(ankF.y, ankB.y) + FOOT_CLEARANCE) : -AIR_HIP;
-    const hipY = auto + (-18 - auto) * p.lying - p.lift;
-    this.hipLocal = { x: p.bodyX, y: hipY };
-    this.body.setPosition(p.bodyX, hipY).setRotation(p.rootRot * DEG);
-
-    const lean = p.lean * DEG;
-    const up: V = { x: Math.sin(lean), y: -Math.cos(lean) };
-    const fwd: V = { x: Math.cos(lean), y: Math.sin(lean) };
-    const hipF = mul(fwd, 3);
-    const hipB = mul(fwd, -4);
-
-    this.place('thighF', hipF, -p.legF[0]);
-    this.place('shinF', add(hipF, kneeF), -(p.legF[0] + p.legF[1]));
-    this.place('thighB', hipB, -p.legB[0]);
-    this.place('shinB', add(hipB, kneeB), -(p.legB[0] + p.legB[1]));
+    const j = d.joints;
+    this.place('thighF', j.hipF, -j.legF[0]);
+    this.place('shinF', j.kneeF, -(j.legF[0] + j.legF[1]));
+    this.place('thighB', j.hipB, -j.legB[0]);
+    this.place('shinB', j.kneeB, -(j.legB[0] + j.legB[1]));
     this.place('torso', { x: 0, y: 0 }, p.lean);
-
-    const chest = mul(up, SEG.torso);
-    const shF = mul(up, SEG.torso - 6);
-    const shB = add(shF, mul(fwd, -6));
-    const elbF = add(shF, mul(dir(p.armF[0]), SEG.upper));
-    const elbB = add(shB, mul(dir(p.armB[0]), SEG.upper));
-    this.place('upperF', shF, -p.armF[0]);
-    this.place('foreF', elbF, -(p.armF[0] + p.armF[1]));
-    this.place('upperB', shB, -p.armB[0]);
-    this.place('foreB', elbB, -(p.armB[0] + p.armB[1]));
+    this.place('upperF', j.shF, -p.armF[0]);
+    this.place('foreF', j.elbF, -(p.armF[0] + p.armF[1]));
+    this.place('upperB', j.shB, -p.armB[0]);
+    this.place('foreB', j.elbB, -(p.armB[0] + p.armB[1]));
 
     const headDeg = p.lean + p.head;
-    this.place('head', chest, headDeg);
+    this.place('head', j.chest, headDeg);
     const face = headKey(this.art, this.expression);
     if (this.parts.head.texture.key !== face) this.parts.head.setTexture(face);
 
-    this.chest = chest;
+    this.chest = j.chest;
     this.headRot = headDeg * DEG;
-    this.torsoRot = lean;
-    this.handF = add(elbF, mul(dir(p.armF[0] + p.armF[1]), 33));
-    this.handB = add(elbB, mul(dir(p.armB[0] + p.armB[1]), 33));
-    this.toeF = add(add(hipF, ankF), mul(dir(p.legF[0] + p.legF[1] + 90), 8));
+    this.torsoRot = p.lean * DEG;
+    this.handF = j.handF;
+    this.handB = j.handB;
+    this.toeF = j.toeF;
 
-    const s = this.scale;
-    const sq = p.squash;
-    this.root.setPosition(f.x + this.shakeX, f.y).setScale((f.facing * s) / Math.sqrt(sq), s * sq);
+    this.root.setPosition(f.x + this.shakeX, f.y).setScale(d.scaleX, this.scale * p.squash);
   }
 
   /** Body-space point -> world. */
   private toWorld(q: V): V {
-    const r = rot(q, this.pose.rootRot * DEG);
+    const r = rot(q, this.drive.pose.rootRot * DEG);
     return {
       x: this.root.x + (this.hipLocal.x + r.x) * this.root.scaleX,
       y: this.root.y + (this.hipLocal.y + r.y) * this.root.scaleY,
@@ -610,9 +398,10 @@ export class FighterRig {
     const f = this.f;
     const h = Math.max(0, groundY - f.y);
     const s = Math.max(0.3, 1 - h / 320) * this.scale;
-    const width = (110 + this.pose.lying * 80) * s;
+    const lying = this.drive.pose.lying;
+    const width = (110 + lying * 80) * s;
     g.fillStyle(0x000000, 0.34 * Math.min(1, s));
-    g.fillEllipse(f.x - this.pose.lying * 40 * f.facing * this.scale, groundY + 3, width, 22 * s);
+    g.fillEllipse(f.x - lying * 40 * f.facing * this.scale, groundY + 3, width, 22 * s);
   }
 
   destroy(): void {
