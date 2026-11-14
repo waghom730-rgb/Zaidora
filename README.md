@@ -83,7 +83,7 @@ server's IP address (Atlas → Network Access).
 | S         | Block (hold) · **tap just before a hit lands = parry** |
 | Space     | Dash (holding forward; keep holding to run) · Evade (holding back or no direction) |
 | ESC       | Pause (Q from pause = quit to menu) |
-| M         | Mute / unmute                   |
+| M         | Sound on / off (anywhere)       |
 | `         | Toggle hitbox debug view        |
 
 **Combos** — press the next button as the previous hit connects:
@@ -154,7 +154,10 @@ stagger or an evade's recovery deals 25% more damage with extra hitstun (shown a
 - **Effects.** Swoosh trails, afterimages on heavy attacks, flips, dashes and evades, character-styled hit
   sparks (fire / shadow slash), intro and victory auras, cinematic KO zoom.
 - **Camera.** The fight camera zooms in and tracks the fighters; the HUD is drawn by a
-  separate unzoomed camera. Sound effects are synthesized with Web Audio.
+  separate unzoomed camera.
+- **Audio.** Five original music tracks and 34 sound effects, all generated in code with Web Audio
+  (no audio files). Master, music and effects volume in **SOUND** on the main menu and on the pause
+  screen. See [docs/AUDIO_SYSTEM.md](docs/AUDIO_SYSTEM.md).
 - Swapping in hand-drawn sprite sheets later only touches `render/` — combat code and
   hitboxes are independent of the visuals.
 
@@ -195,7 +198,8 @@ src/
 ├── systems/
 │   ├── InputManager.ts      Keyboard → FighterInput
 │   ├── EnemyAI.ts           CPU opponent (easy / normal / hard profiles)
-│   └── AudioManager.ts      Synthesized sound effects
+│   ├── AudioManager.ts      All sound: mix, volumes, scene music, autoplay, duplicate protection
+│   └── audio/               synth.ts (instruments), sfx.ts (effects), music.ts (tracks + sequencer)
 ├── render/
 │   ├── CharacterArt.ts      Paints each character's body parts and expressions
 │   ├── FighterRig.ts        Cut-out skeleton, animation playback, ropes, trails, afterimages
@@ -204,7 +208,7 @@ src/
 │   └── Rope.ts              Verlet rope for hair and cloth
 ├── arena/Arena.ts           Sunset dojo background, lantern glow, cherry petals
 ├── effects/Effects.ts       Hit sparks, fire / shadow styles, block flashes, dust, auras
-└── ui/                      HUD (portraits, countdown banner), health bars, text styles
+└── ui/                      HUD (portraits, countdown banner), health bars, sound settings panel, text styles
 tests/
 ├── sim.ts                   Headless match simulation (same step order as FightScene)
 ├── combat.test.ts           Chains, no-infinite checks, heavies, parry, dash / run / evade
@@ -244,4 +248,4 @@ Run one suite with e.g. `npm run test:browser -- specials`, or point at a runnin
 4. **Enemy intelligence** — ~~reaction jitter, evades, dash-ins, heavy punishes, fireball
    parries~~ ✅, spacing, reading the player's patterns
 5. **Complete game** — ~~character select~~ ✅, ~~VS screen, countdown, HUD portraits~~ ✅, ~~character art & animation~~ ✅, more fighters,
-   more arenas, story mode, music, progression
+   more arenas, story mode, ~~music and sound~~ ✅, progression

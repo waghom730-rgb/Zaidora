@@ -196,7 +196,7 @@ export class VersusScene extends Phaser.Scene {
         if (this.leaving) return;
         this.cameras.main.shake(180, 0.008);
         this.cameras.main.flash(120, 255, 240, 200);
-        audio.play('hitHeavy');
+        audio.play('vs');
         this.tweens.add({ targets: vs, scale: 1.06, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       },
     });
@@ -277,7 +277,7 @@ export class VersusScene extends Phaser.Scene {
         this.leave('FightScene');
         break;
       case 'Escape':
-        audio.play('select');
+        audio.play('back');
         this.leave('CharacterSelectScene');
         break;
     }

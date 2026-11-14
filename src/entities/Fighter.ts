@@ -35,6 +35,7 @@ export type FighterEvent =
   | 'land'
   | 'whoosh'
   | 'groundImpact'
+  | 'getUp'
   | 'specialStart'
   | 'projectile'
   | 'noEnergy'
@@ -310,7 +311,10 @@ export class Fighter {
         break;
 
       case 'down':
-        if (this.stateTime >= PHYS.downFrames) this.setState('getup');
+        if (this.stateTime >= PHYS.downFrames) {
+          this.setState('getup');
+          this.events.push('getUp');
+        }
         break;
 
       case 'getup':

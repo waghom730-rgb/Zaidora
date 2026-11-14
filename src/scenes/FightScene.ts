@@ -24,9 +24,11 @@ import { FIGHTERS, opponentOf, withOutfit, type FighterId } from '../entities/fi
 import { INTRO_CUE } from '../render/animations';
 import { FighterRig } from '../render/FighterRig';
 import { audio } from '../systems/AudioManager';
+import { hurtSfx, impactSfx, swingSfx } from '../systems/audio/sfx';
 import { EnemyAI } from '../systems/EnemyAI';
 import { InputManager, onKeyPress } from '../systems/InputManager';
 import { profile } from '../services/profile';
+import { AudioPanel } from '../ui/AudioPanel';
 import { HUD } from '../ui/HUD';
 import { textStyle } from '../ui/textStyles';
 import type { ResultData } from './ResultScene';
@@ -101,7 +103,7 @@ export class FightScene extends Phaser.Scene {
   private hud!: HUD;
   private fx!: Effects;
   private pauseLayer!: Phaser.GameObjects.Container;
-  private pauseSound!: Phaser.GameObjects.Text;
+  private pausePanel!: AudioPanel;
 
   private accumulator = 0;
   private hitstop = 0;
@@ -214,6 +216,11 @@ export class FightScene extends Phaser.Scene {
   private addUi<T extends Phaser.GameObjects.GameObject>(o: T): T {
     this.ui.add(o);
     return o;
+  }
+
+  /** Stereo position for a sound at world x: up to half-way left/right at the edges of the view. */
+  private panAt(x: number): number {
+    return Math.max(-0.6, Math.min(0.6, ((x - this.camX) / (GAME_WIDTH / ZOOM / 2)) * 0.5));
   }
 
   // ------------------------------------------------------------------ loop
@@ -335,7 +342,7 @@ export class FightScene extends Phaser.Scene {
       this.hitstop = Math.max(this.hitstop, 14);
       this.lastDefender = h.projectile ? h.defender : h.attacker;
       this.fx.parry(h.x, h.y);
-      audio.play('parry');
+      audio.play('parry', { pan: this.panAt(h.x) });
       this.cameras.main.flash(90, 255, 236, 160);
       this.hud.callout(defenderIndex, 'PARRY!', '#ffe066');
       return;
@@ -344,17 +351,20 @@ export class FightScene extends Phaser.Scene {
     if (h.blocked) {
       this.hitstop = Math.max(this.hitstop, h.move.hitstop - 2);
       this.fx.block(h.x, h.y);
-      audio.play('block');
+      audio.play('block', { pan: this.panAt(h.x) });
       return;
     }
 
     const heavy = h.move.heavy || h.ko || h.counter;
     this.hitstop = Math.max(this.hitstop, h.move.hitstop + (h.ko ? 16 : 0) + (h.counter ? PHYS.counterHitstop : 0));
     this.fx.hit(h.x, h.y, heavy, h.attacker.def.fx);
-    audio.play(heavy ? 'hitHeavy' : 'hitLight');
+    const pan = this.panAt(h.x);
+    audio.play(impactSfx(h.move, heavy, h.projectile), { pan });
+    // The fighter's own reaction on the hits that matter (its sound also has a minimum gap, so combos don't chatter).
+    if (heavy || h.combo <= 1) audio.play(hurtSfx(h.defender.def.id), { pan });
     this.cameras.main.shake(heavy ? 200 : 70, heavy ? 0.009 : 0.003);
     if (h.counter) {
-      audio.play('counter');
+      audio.play('counter', { pan });
       this.hud.callout(attackerIndex, 'COUNTER', '#ff6a4d');
     }
 
@@ -368,20 +378,21 @@ export class FightScene extends Phaser.Scene {
   }
 
   private drainEvents(f: Fighter): void {
+    const pan = this.panAt(f.x);
     for (const e of f.events) {
       switch (e) {
         case 'whoosh':
-          audio.play(f.move?.special?.kind === 'dash' ? 'dash' : 'whoosh');
+          audio.play(f.move ? swingSfx(f.move) : 'punchSwing', { pan });
           break;
         case 'specialStart':
           // Readable tell: a short aura flare and power-up sound during startup.
-          audio.play('powerup');
+          audio.play('powerup', { pan });
           this.fx.aura(f.x, GROUND_Y, f.def.fx, 10);
           this.hud.portraitShout(f === this.p1 ? 0 : 1);
           break;
         case 'projectile':
           this.combat.spawnProjectile(f);
-          audio.play('fireball');
+          audio.play('fireball', { pan });
           break;
         case 'noEnergy':
           if (f === this.p1) {
@@ -390,25 +401,28 @@ export class FightScene extends Phaser.Scene {
           }
           break;
         case 'jump':
-          audio.play('jump');
+          audio.play('jump', { pan });
           this.fx.dust(f.x, GROUND_Y, 4);
           break;
         case 'dash':
-          audio.play('step');
+          audio.play('step', { pan });
           this.fx.dust(f.x - f.facing * 30, GROUND_Y, 6);
           break;
         case 'evade':
-          audio.play('step');
+          audio.play('step', { pan });
           this.fx.dust(f.x + f.facing * 20, GROUND_Y, 5);
           break;
         case 'land':
-          audio.play('land');
+          audio.play('land', { pan });
           this.fx.dust(f.x, GROUND_Y, 5);
           break;
         case 'groundImpact':
-          audio.play('thud');
+          audio.play('thud', { pan });
           this.fx.dust(f.x - f.facing * 40, GROUND_Y, 14);
           this.cameras.main.shake(140, 0.005);
+          break;
+        case 'getUp':
+          audio.play('getUp', { pan });
           break;
       }
     }
@@ -509,6 +523,7 @@ export class FightScene extends Phaser.Scene {
         const l = this.roundLoser;
         if (this.roundEndReason === 'time' && l && l.state !== 'lose' && t > 50 && l.isActionable()) l.slump();
         if (t === 100) {
+          audio.play(!w ? 'round' : w === this.p1 ? 'roundWin' : 'roundLose');
           if (!w) this.hud.announce('DRAW', { hold: 900 });
           else if (w.hp === w.mods.maxHp) this.hud.announce('PERFECT', { color: '#ffd23f', hold: 900 });
           else this.hud.announce(w === this.p1 ? 'YOU WIN' : 'YOU LOSE', { color: w === this.p1 ? '#ffd23f' : '#c8b6ff', hold: 900 });
@@ -545,10 +560,14 @@ export class FightScene extends Phaser.Scene {
     if (this.roundLoser) this.hud.portraitDefeat(this.roundLoser === p1 ? 0 : 1);
     else if (reason === 'ko') [0, 1].forEach((i) => this.hud.portraitDefeat(i as 0 | 1));
 
+    // The deciding round lets the music go (the result screen brings its own); others just dip it.
+    const decided = this.wins[0] >= ROUNDS_TO_WIN || this.wins[1] >= ROUNDS_TO_WIN;
+    if (decided) audio.music(null, 1.8);
     if (reason === 'ko') {
       this.slowMo = 45;
       this.cameras.main.flash(250, 255, 255, 255);
       audio.play('ko');
+      if (!decided) audio.duckMusic(0.35, 2.2);
       const double = p1.hp <= 0 && p2.hp <= 0;
       this.hud.announce(double ? 'DOUBLE K.O.' : 'K.O.', { color: '#ff4d3d', size: 160, hold: 1100 });
       // Cinematic push-in on the knocked-out fighter.
@@ -556,7 +575,7 @@ export class FightScene extends Phaser.Scene {
       this.tweens.killTweensOf(this.koFocus);
       this.tweens.add({ targets: this.koFocus, t: 1, duration: 260, ease: 'Quad.easeOut', yoyo: true, hold: 1300 });
     } else {
-      audio.play('round');
+      audio.play('timeUp');
       this.hud.announce('TIME', { hold: 900 });
     }
   }
@@ -637,17 +656,14 @@ export class FightScene extends Phaser.Scene {
 
   private onKey(e: KeyboardEvent): void {
     audio.unlock();
+    // Paused: the sound settings take the arrow/WASD keys. (M, sound on/off, works everywhere.)
+    if (this.paused && this.pausePanel.handleKey(e.code)) return;
     switch (e.code) {
       case 'Escape':
         if (this.phase !== 'matchOver') this.setPaused(!this.paused);
         break;
       case 'KeyQ':
         if (this.paused) this.scene.start('MenuScene');
-        break;
-      case 'KeyM':
-        audio.toggleMute();
-        this.pauseSound.setText(`M   Sound: ${audio.muted ? 'OFF' : 'ON'}`);
-        void profile.saveSettings({ muted: audio.muted });
         break;
       case 'Backquote':
         this.showBoxes = !this.showBoxes;
@@ -660,6 +676,7 @@ export class FightScene extends Phaser.Scene {
   private setPaused(paused: boolean): void {
     this.paused = paused;
     this.pauseLayer.setVisible(paused);
+    audio.setPaused(paused);
     this.controls.clear();
     if (paused) this.tweens.pauseAll();
     else this.tweens.resumeAll();
@@ -668,21 +685,17 @@ export class FightScene extends Phaser.Scene {
   private buildPauseLayer(): void {
     const cx = GAME_WIDTH / 2;
     const bg = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x07040f, 0.72).setOrigin(0);
-    const title = this.add.text(cx, 250, 'PAUSED', textStyle(90, '#ffd23f')).setOrigin(0.5);
+    const title = this.add.text(cx, 200, 'PAUSED', textStyle(90, '#ffd23f')).setOrigin(0.5);
     const lines = this.add
-      .text(cx, 380, 'ESC   Resume\nQ   Quit to menu', textStyle(26, '#ffffff', { italic: false }))
-      .setOrigin(0.5)
-      .setAlign('center')
-      .setLineSpacing(10);
-    this.pauseSound = this.add
-      .text(cx, 460, `M   Sound: ${audio.muted ? 'OFF' : 'ON'}`, textStyle(22, '#c8b6ff', { italic: false }))
+      .text(cx, 300, 'ESC   Resume          Q   Quit to menu', textStyle(26, '#ffffff', { italic: false }))
       .setOrigin(0.5);
+    this.pausePanel = new AudioPanel(this, cx, 390);
     const hint = this.add
-      .text(cx, 520, '`   toggle hitbox view', textStyle(16, '#9a90b0', { italic: false }))
+      .text(cx, 640, '`   toggle hitbox view', textStyle(16, '#9a90b0', { italic: false }))
       .setOrigin(0.5);
     this.pauseLayer = this.addUi(
       this.add
-        .container(0, 0, [bg, title, lines, this.pauseSound, hint])
+        .container(0, 0, [bg, title, lines, this.pausePanel.container, hint])
         .setDepth(DEPTH.overlay)
         .setVisible(false),
     );

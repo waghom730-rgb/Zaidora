@@ -137,12 +137,12 @@ export class ResultScene extends Phaser.Scene {
     if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyJ') this.leave(mode === 'ladder' ? 'VersusScene' : 'FightScene', { difficulty, player, mode });
     else if (e.code === 'KeyC') this.leave('CharacterSelectScene', { difficulty, player, mode });
     else if (e.code === 'KeyD') this.leave('DojoScene', { back: 'MenuScene' });
-    else if (e.code === 'Escape') this.leave('MenuScene', {});
+    else if (e.code === 'Escape') this.leave('MenuScene', {}, 'back');
   }
 
-  private leave(scene: string, data: object): void {
+  private leave(scene: string, data: object, sound: 'confirm' | 'back' = 'confirm'): void {
     this.leaving = true;
-    audio.play('confirm');
+    audio.play(sound);
     this.cameras.main.fadeOut(300, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start(scene, data));
   }

@@ -2,13 +2,14 @@
 //   npm run test:browser            (starts its own Vite server)
 //   BASE_URL=http://localhost:5173 npm run test:browser   (use a server that's already running)
 import { launchBrowser, startServer } from './harness.mjs';
+import * as audio from './audio.mjs';
 import * as flow from './flow.mjs';
 import * as progression from './progression.mjs';
 import * as specials from './specials.mjs';
 import * as stability from './stability.mjs';
 
 const only = process.argv.slice(2);
-const suites = { flow, specials, stability, progression };
+const suites = { flow, specials, stability, progression, audio };
 
 const server = await startServer();
 const browser = await launchBrowser();

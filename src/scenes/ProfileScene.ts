@@ -84,7 +84,7 @@ export class ProfileScene extends Phaser.Scene {
     onKeyPress(this, (e) => {
       audio.unlock();
       if (e.code === 'Escape' || e.code === 'Enter') {
-        audio.play('select');
+        audio.play('back');
         this.scene.start('MenuScene');
       }
     });

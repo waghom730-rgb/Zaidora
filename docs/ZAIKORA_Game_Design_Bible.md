@@ -1488,6 +1488,8 @@ passes a test.
   Energy meter                                 Implemented (prototype)
   Kaen Fireball                                Implemented (prototype)
   Yoru Shadow Dash                             Implemented (prototype)
+  Original music (5 tracks) and sound effects  Implemented (prototype)
+  Master/music/SFX volume and mute settings    Implemented (prototype)
   Kai/Mira/Ren final designs                   Not locked
   Thirty master designs                        Not completed
   Ten chapter bosses                           Not completed

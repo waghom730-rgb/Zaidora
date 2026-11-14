@@ -6,13 +6,14 @@ import { KAEN, YORU, withOutfit } from '../entities/fighterDefs';
 import { profile } from '../services/profile';
 import { audio } from '../systems/AudioManager';
 import { onKeyPress } from '../systems/InputManager';
+import { AudioPanel } from '../ui/AudioPanel';
 import { textStyle } from '../ui/textStyles';
 import { Showcase } from './showcase';
 
 const CX = GAME_WIDTH / 2;
 
-type ItemId = 'ladder' | 'versus' | 'dojo' | 'profile' | 'difficulty' | 'logout';
-const ITEMS: ItemId[] = ['ladder', 'versus', 'dojo', 'profile', 'difficulty', 'logout'];
+type ItemId = 'ladder' | 'versus' | 'dojo' | 'profile' | 'difficulty' | 'sound' | 'logout';
+const ITEMS: ItemId[] = ['ladder', 'versus', 'dojo', 'profile', 'difficulty', 'sound', 'logout'];
 
 export class MenuScene extends Phaser.Scene {
   private selected = 0;
@@ -21,6 +22,9 @@ export class MenuScene extends Phaser.Scene {
   private hint!: Phaser.GameObjects.Text;
   private showcase!: Showcase;
   private starting = false;
+  /** The sound settings overlay (opened from the SOUND item). */
+  private soundLayer!: Phaser.GameObjects.Container;
+  private soundPanel!: AudioPanel;
 
   constructor() {
     super('MenuScene');
@@ -57,7 +61,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(DEPTH.hud);
 
-    this.items = ITEMS.map((_, i) => this.add.text(CX, 238 + i * 46, '', textStyle(28)).setOrigin(0.5).setDepth(DEPTH.hud));
+    this.items = ITEMS.map((_, i) => this.add.text(CX, 232 + i * 42, '', textStyle(28)).setOrigin(0.5).setDepth(DEPTH.hud));
     this.cursor = this.add.text(0, 0, '▶', textStyle(24, '#ffd23f')).setOrigin(0.5).setDepth(DEPTH.hud);
     this.tweens.add({ targets: this.cursor, alpha: 0.35, duration: 450, yoyo: true, repeat: -1 });
     this.hint = this.add.text(CX, 525, '', textStyle(15, '#ffcf9a', { italic: false, strokeRatio: 0.3 })).setOrigin(0.5).setDepth(DEPTH.hud);
@@ -74,9 +78,31 @@ export class MenuScene extends Phaser.Scene {
       .setAlpha(0.85)
       .setDepth(DEPTH.hud);
 
+    this.buildSoundLayer();
+    // M (sound on/off) works anywhere; keep the SOUND item's label in step.
+    const off = audio.onChange(() => this.refreshMenu());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
+
     this.refreshMenu();
     onKeyPress(this, (e) => this.onKey(e));
     this.cameras.main.fadeIn(400);
+  }
+
+  private buildSoundLayer(): void {
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x07040f, 0.82).setOrigin(0);
+    const box = this.add.graphics();
+    box.fillStyle(0x120a22, 0.97).fillRoundedRect(CX - 330, 168, 660, 424, 18);
+    box.lineStyle(3, 0xffd23f, 0.7).strokeRoundedRect(CX - 330, 168, 660, 424, 18);
+    const title = this.add.text(CX, 230, 'SOUND', textStyle(64, '#ffd23f')).setOrigin(0.5);
+    this.soundPanel = new AudioPanel(this, CX, 330);
+    const back = this.add.text(CX, 560, 'ESC  back', textStyle(18, '#ffffff', { italic: false })).setOrigin(0.5).setAlpha(0.85);
+    this.soundLayer = this.add.container(0, 0, [dim, box, title, this.soundPanel.container, back]).setDepth(DEPTH.overlay).setVisible(false);
+  }
+
+  private setSoundOpen(open: boolean): void {
+    this.soundLayer.setVisible(open);
+    this.soundPanel.refresh();
+    this.refreshMenu();
   }
 
   update(_time: number, delta: number): void {
@@ -96,6 +122,8 @@ export class MenuScene extends Phaser.Scene {
         return 'PROFILE';
       case 'difficulty':
         return `DIFFICULTY   <  ${this.difficulty.toUpperCase()}  >`;
+      case 'sound':
+        return `SOUND  ·  ${audio.muted ? 'OFF' : `${Math.round(audio.volumes.master * 100)}%`}`;
       case 'logout':
         return profile.online ? 'LOG OUT' : 'SIGN IN / SWITCH';
     }
@@ -114,6 +142,8 @@ export class MenuScene extends Phaser.Scene {
         return 'Your level, records and fighting habits.';
       case 'difficulty':
         return 'CPU strength for Versus matches (the ladder sets its own).';
+      case 'sound':
+        return 'Master, music and effects volume. M turns sound on or off anywhere, even mid-fight.';
       case 'logout':
         return profile.online ? `Signed in as ${profile.username} — progress is saved online.` : 'Create an account to keep progress on any device.';
     }
@@ -133,6 +163,13 @@ export class MenuScene extends Phaser.Scene {
   private onKey(e: KeyboardEvent): void {
     audio.unlock();
     if (this.starting) return;
+    if (this.soundLayer.visible) {
+      if (e.code === 'Escape') {
+        audio.play('back');
+        this.setSoundOpen(false);
+      } else this.soundPanel.handleKey(e.code);
+      return;
+    }
     const id = ITEMS[this.selected];
     switch (e.code) {
       case 'KeyW':
@@ -176,6 +213,9 @@ export class MenuScene extends Phaser.Scene {
         return this.go('ProfileScene', {});
       case 'difficulty':
         return this.cycleDifficulty(1);
+      case 'sound':
+        audio.play('confirm');
+        return this.setSoundOpen(true);
       case 'logout':
         this.starting = true;
         void profile.logout().then(() => this.go('AccountScene', {}, true));

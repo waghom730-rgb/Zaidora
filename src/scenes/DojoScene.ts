@@ -240,6 +240,7 @@ export class DojoScene extends Phaser.Scene {
       }
       case 'Escape':
         if (this.busy) return;
+        audio.play('back');
         this.cameras.main.fadeOut(250, 0, 0, 0);
         this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start(this.back));
         return;
